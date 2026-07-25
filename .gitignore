@@ -1,0 +1,22 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Local runtime state
+db.json
+sessions/
+*.jpg
+*.png
+!rocd/screenshot.png
+
+# Temporary files
+*.tmp
+*.swp
+*~
+pastebinjs_*
+pastebinpy_*

@@ -1,0 +1,69 @@
+# ~/.bashrc — Silent Ultimate (Cleanest Termux Startup)
+# No echo spam, auto-enter local Ubuntu or OCI remote, 100% silent unless error
+# Modes:
+#   default = local ubuntu container (silent)
+#   oci remote = touch ~/.oci-default-shell-enabled
+#   termux host only = touch ~/.local-only
+#   show messages = touch ~/.bashrc-verbose
+
+# Prevent double sourcing inside ubuntu container
+[ -n "$BASHRC_SILENT_LOADED" ] && return
+export BASHRC_SILENT_LOADED=1
+
+export TERM=xterm-256color
+export OCI_TS_IP="${OCI_TS_IP:-100.91.232.91}"
+
+# --- Silent OCI Remote (if enabled) ---
+if [[ $- == *i* ]] && [[ -z "$OCI_ALREADY" ]] && [[ -z "$UBUNTU_ACTIVE" ]]; then
+  if [[ ! -f "$HOME/.local-only" ]] && [[ -f "$HOME/.oci-default-shell-enabled" ]] && [[ ! -f "$HOME/.local-ubuntu-only" ]]; then
+    if command -v tailscale >/dev/null 2>&1 && tailscale ping --c=1 --timeout=2s $OCI_TS_IP >/dev/null 2>&1; then
+      export OCI_ALREADY=1
+      exec ssh -tt -o ServerAliveInterval=20 -o StrictHostKeyChecking=no root@$OCI_TS_IP "bash -l" 2>/dev/null || \
+           ssh -tt -o ServerAliveInterval=20 -o StrictHostKeyChecking=no ubuntu@$OCI_TS_IP "bash -l" 2>/dev/null || true
+    elif ping -c1 -W2 $OCI_TS_IP >/dev/null 2>&1; then
+      export OCI_ALREADY=1
+      exec ssh -tt root@$OCI_TS_IP "bash -l" 2>/dev/null || true
+    fi
+  fi
+fi
+
+# --- Silent Local Ubuntu via rocd native (default) ---
+if [ -t 0 ] && [ -x "$PREFIX/bin/ubuntu" ] && [ -z "$UBUNTU_ACTIVE" ] && [ -z "$OCI_ALREADY" ]; then
+  if [ ! -f "$HOME/.local-only" ]; then
+    export UBUNTU_ACTIVE=1
+    # Silent exec, no echo unless verbose flag exists
+    if [ -f "$HOME/.bashrc-verbose" ]; then
+      echo "🐳 Entering Local Ubuntu..."
+    fi
+    # Direct exec to ubuntu (no extra echo)
+    exec ubuntu 2>/dev/null || (echo "⚠️ Container exit" && export UBUNTU_ACTIVE=)
+  fi
+fi
+
+# --- Clean aliases (silent) ---
+alias l='ls -lah'
+alias ll='ls -lh'
+alias la='ls -A'
+alias c='clear'
+alias q='exit'
+alias x='exit'
+
+# Mode switchers (silent, one-line output)
+alias local-ubuntu='rm -f ~/.local-only ~/.oci-default-shell-enabled; touch ~/.local-ubuntu-only; echo "local-ubuntu mode"; exec bash -l'
+alias oci-remote='rm -f ~/.local-only ~/.local-ubuntu-only; touch ~/.oci-default-shell-enabled; echo "oci-remote $OCI_TS_IP enabled"; exec bash -l'
+alias termux-host='touch ~/.local-only; rm -f ~/.oci-default-shell-enabled ~/.local-ubuntu-only; echo "termux host only"'
+alias verbose-on='touch ~/.bashrc-verbose; echo "verbose on"'
+alias verbose-off='rm -f ~/.bashrc-verbose; echo "silent"'
+
+# Agent & mesh helpers (silent)
+alias oci-shell='ssh -tt root@$OCI_TS_IP "bash -l" 2>/dev/null || ssh -tt ubuntu@$OCI_TS_IP "bash -l"'
+alias rocd-oci='oci-shell'
+alias oci-tunnel='autossh -M 0 -L 11434:127.0.0.1:11434 root@$OCI_TS_IP -N -f; curl -s http://127.0.0.1:11434/api/tags | head -n 3'
+alias mesh-status='tailscale status; tailscale ip -4'
+alias ubuntu-fix='bash ~/rocagents/termux-rocd/fix-proot-ubuntu-localhost.sh'
+alias fix-root='cd /tmp; rm -rf /root; mkdir -p /root; chmod 700 /root; cp /etc/skel/.bashrc /root/.bashrc 2>/dev/null || echo "export PS1=\"\\u@\\h:\\w\\$ \"">/root/.bashrc; cd /root; ls -la'
+
+# Minimal prompt if not in ubuntu container
+if [ -z "$UBUNTU_ACTIVE" ] && [ -z "$OCI_ALREADY" ]; then
+  export PS1="\[\e[0;32m\]\w\[\e[0m\] \$ "
+fi

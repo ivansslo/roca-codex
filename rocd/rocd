@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# ═════════════════════════════════════════════════════════════════════════════
+#  rocd Container Engine Launcher (Source Execution Wrapper)
+# ═════════════════════════════════════════════════════════════════════════════
+
+export PROOT_NO_SECCOMP=1
+export PROOT_FORCE_READLINK=1
+
+# Ensure host DNS resolv.conf exists before running on Termux
+RESOLV_DIR="${PREFIX:-/data/data/com.termux/files/usr}/etc"
+if [ -w "$(dirname "$RESOLV_DIR" 2>/dev/null)" ]; then
+  mkdir -p "$RESOLV_DIR" 2>/dev/null || true
+  RESOLV="$RESOLV_DIR/resolv.conf"
+  if [ ! -f "$RESOLV" ] || [ ! -s "$RESOLV" ]; then
+    printf "nameserver 8.8.8.8\nnameserver 1.1.1.1\n" > "$RESOLV" 2>/dev/null || true
+  fi
+fi
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PYTHONPATH="$DIR:$PYTHONPATH"
+
+exec python3 "$DIR/rocd.py" "$@"

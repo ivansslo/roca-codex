@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⚡ ROC AgentRoute — Hermes Dashboard</title>
+<style>
+  :root{
+    --bg:#05070d; --panel:#0b1020; --panel2:#0e1530; --border:#1c2647;
+    --txt:#dbe4ff; --dim:#8b98c9; --cyan:#22d3ee; --green:#34d399;
+    --amber:#fbbf24; --red:#f87171; --purple:#a78bfa;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    background:var(--bg); color:var(--txt); font-family:'Segoe UI',system-ui,sans-serif;
+    min-height:100vh; padding:20px;
+    background-image:radial-gradient(circle at 20% 10%,rgba(34,211,238,.07),transparent 40%),
+                     radial-gradient(circle at 80% 90%,rgba(167,139,250,.08),transparent 40%);
+  }
+  .wrap{max-width:1200px;margin:0 auto}
+  header{
+    display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;
+    background:linear-gradient(135deg,var(--panel),var(--panel2));
+    border:1px solid var(--border);border-radius:16px;padding:18px 22px;margin-bottom:18px;
+  }
+  h1{font-size:1.35rem;display:flex;align-items:center;gap:10px}
+  h1 .bolt{color:var(--cyan)}
+  .badge{font-family:monospace;font-size:.7rem;background:rgba(34,211,238,.12);color:var(--cyan);
+    border:1px solid rgba(34,211,238,.35);padding:3px 10px;border-radius:99px}
+  .proj{font-family:monospace;font-size:.72rem;color:var(--dim)}
+  .proj b{color:var(--green)}
+  #clock{font-family:monospace;color:var(--dim);font-size:.85rem;text-align:right}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:14px}
+  .card{
+    background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;
+    transition:transform .15s,border-color .15s;
+  }
+  .card:hover{transform:translateY(-2px);border-color:rgba(34,211,238,.4)}
+  .card h3{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);
+    display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber)}
+  .dot.on{background:var(--green);box-shadow:0 0 10px var(--green)}
+  .dot.off{background:var(--red);box-shadow:0 0 10px var(--red)}
+  .url{font-family:monospace;font-size:.72rem;color:var(--cyan);word-break:break-all}
+  .stat{font-size:.68rem;color:var(--dim);margin-top:6px;font-family:monospace}
+  .panel{
+    background:var(--panel);border:1px solid var(--border);border-radius:16px;
+    padding:20px;margin-bottom:14px;
+  }
+  .panel h2{font-size:1rem;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .panel h2 .ico{color:var(--cyan)}
+  #msgs{display:flex;flex-direction:column;gap:8px;max-height:320px;overflow-y:auto;margin-bottom:12px}
+  .msg{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-size:.85rem}
+  .msg .meta{font-family:monospace;font-size:.65rem;color:var(--purple);margin-bottom:3px}
+  .msg .empty{color:var(--dim);text-align:center;font-size:.8rem;padding:18px}
+  .row{display:flex;gap:10px}
+  input[type=text]{
+    flex:1;background:var(--bg);border:1px solid var(--border);border-radius:10px;
+    color:var(--txt);padding:10px 14px;font-size:.85rem;font-family:inherit;outline:none;
+  }
+  input[type=text]:focus{border-color:var(--cyan)}
+  button{
+    background:linear-gradient(135deg,var(--cyan),#0ea5e9);border:none;border-radius:10px;
+    color:#04121a;font-weight:700;padding:10px 20px;font-size:.85rem;cursor:pointer;
+  }
+  button:disabled{opacity:.5;cursor:wait}
+  .note{font-size:.75rem;color:var(--amber);background:rgba(251,191,36,.08);
+    border:1px solid rgba(251,191,36,.25);border-radius:10px;padding:10px 14px;margin-bottom:12px;display:none}
+  code,.c{font-family:monospace;color:var(--cyan)}
+  .cmds{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:6px;font-family:monospace;font-size:.75rem}
+  .cmds div{padding:6px 10px;background:var(--panel2);border-radius:8px;border:1px solid var(--border)}
+  .cmds b{color:var(--green)}
+  .links{display:flex;flex-wrap:wrap;gap:8px}
+  .links a{
+    font-family:monospace;font-size:.72rem;color:var(--cyan);text-decoration:none;
+    background:var(--panel2);border:1px solid var(--border);border-radius:99px;padding:6px 14px;
+  }
+  .links a:hover{border-color:var(--cyan)}
+  footer{text-align:center;color:var(--dim);font-size:.7rem;font-family:monospace;padding:14px}
+  .offline-dot{background:var(--dim)!important;box-shadow:none!important}
+  /* ── AI Studio App panel ── */
+  .studio{border:1px solid rgba(167,139,250,.45);
+    background:linear-gradient(135deg,rgba(167,139,250,.09),var(--panel) 60%)}
+  .studio-body{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+  .studio-desc{font-size:.78rem;color:var(--dim);margin-top:6px;line-height:1.65}
+  .studio-note{font-size:.7rem;color:var(--amber)}
+  .studio-actions{display:flex;flex-direction:column;gap:8px;min-width:220px}
+  .bigbtn{background:linear-gradient(135deg,var(--purple),#7c3aed);color:#fff;text-decoration:none;
+    font-weight:700;font-size:.85rem;padding:13px 22px;border-radius:12px;text-align:center;display:inline-block}
+  .bigbtn:hover{filter:brightness(1.15)}
+  .ghost{background:transparent;border:1px solid var(--border);color:var(--dim);
+    padding:8px 14px;border-radius:10px;font-size:.72rem;cursor:pointer;font-family:monospace}
+  .ghost:hover{border-color:var(--purple);color:var(--txt)}
+  /* ── Oracle VM panel ── */
+  .oravm{border:1px solid rgba(52,211,153,.4);
+    background:linear-gradient(135deg,rgba(52,211,153,.08),var(--panel) 60%)}
+  .vm-grid{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:start}
+  @media(max-width:720px){.vm-grid{grid-template-columns:1fr}}
+  .vm-meta{font-family:monospace;font-size:.72rem;color:var(--dim);line-height:2}
+  .vm-meta b{color:var(--green)}
+  .vm-svc{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .vm-svc span{font-family:monospace;font-size:.66rem;background:var(--panel2);
+    border:1px solid var(--border);border-radius:99px;padding:4px 10px;color:var(--cyan)}
+  .vm-actions{display:flex;flex-direction:column;gap:8px;min-width:230px}
+  .vmbtn{background:linear-gradient(135deg,var(--green),#10b981);color:#04121a;text-decoration:none;
+    font-weight:700;font-size:.85rem;padding:12px 20px;border-radius:12px;text-align:center;display:inline-block}
+  .vmbtn:hover{filter:brightness(1.15)}
+  .vm-row{display:flex;gap:8px}
+  .vm-row .ghost{flex:1;border-color:rgba(52,211,153,.35);color:var(--txt);text-decoration:none;text-align:center;font-size:.72rem;padding:8px 6px;border-radius:10px}
+  .vm-row .ghost:hover{border-color:var(--green)}
+  .vm-status{font-family:monospace;font-size:.7rem;margin-top:8px;padding:8px 12px;border-radius:8px;
+    border:1px solid var(--border);background:var(--panel2);color:var(--dim)}
+  .vm-status.on{border-color:rgba(52,211,153,.5);color:var(--green)}
+  .vm-status.off{border-color:rgba(248,113,113,.5);color:var(--red)}
+  .var-red,.red{color:var(--red)}
+  .green{color:var(--green)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1><span class="bolt">⚡</span> ROC AgentRoute — Hermes Dashboard
+        <span class="badge">v5.13.1</span></h1>
+      <div class="proj">Firebase Project: <b>planning-with-ai-36675</b> · Firestore + Hosting · Oracle VM (webvirtcloud.ai.studio) · Antigravity IDE (antigravity.ai.studio)</div>
+    </div>
+    <div id="clock">--:--:--</div>
+  </header>
+
+  <div class="grid" id="endpoints"></div>
+
+  <div class="panel studio">
+    <div class="studio-body">
+      <div>
+        <h2><span class="ico">🎨</span> AI Studio App — connected</h2>
+        <p class="studio-desc">
+          Applet Google AI Studio Anda — halaman yang sama: <span class="c">ai.studio/apps/90047957-…</span><br>
+          <span class="studio-note">🔒 Private — saat dibuka akan redirect ke login Google akun Anda (itu normal).</span>
+        </p>
+      </div>
+      <div class="studio-actions">
+        <a class="bigbtn" href="https://ai.studio/apps/90047957-bcb6-4808-8e03-3df0c091f88f" target="_blank" rel="noopener">⚡ Buka AI Studio App</a>
+        <button class="ghost" id="copyStudio">salin link</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel oravm">
+    <h2><span class="ico">🖥️</span> Oracle VM — WebVirtCloud
+      <span class="c" style="font-size:.7rem;font-weight:400">(alias: webvirtcloud.ai.studio)</span></h2>
+    <div class="vm-grid">
+      <div>
+        <div class="vm-meta">
+          Host: <b>roc-vm</b> · Oracle Cloud <b>ap-singapore-1</b><br>
+          Public IP: <b>161.118.253.28</b> <button class="ghost" style="padding:2px 10px;font-size:.62rem" id="copyVmIp">salin IP</button><br>
+          Tailnet: <b>100.93.139.73</b> <span style="color:var(--amber)">(aktifkan tailscale di device untuk akses privat)</span>
+        </div>
+        <div class="vm-status" id="vmStatus">⏳ memeriksa status VM…</div>
+        <div class="vm-svc" id="vmSvc"></div>
+        <p class="studio-desc" style="margin-top:10px;font-size:.68rem">
+          ℹ️ Subdomain <span class="c">*.ai.studio</span> milik Google &amp; tidak bisa di-klaim user — jadi ini panel
+          integrasi resminya: <b>status live</b> via Cloudflare bridge HTTPS + tombol langsung ke setiap service.
+          Konsol lengkap (login Firebase/KVM/noVNC) ada di <span class="c">vm.roadfx.biz.id</span>.
+        </p>
+      </div>
+      <div class="vm-actions">
+        <a class="vmbtn" href="https://vm.roadfx.biz.id/vm" target="_blank" rel="noopener">🖥️ VM Console (CF)</a>
+        <div class="vm-row">
+          <a class="ghost" href="http://161.118.253.28/wvc/" target="_blank" rel="noopener">🛡️ WebVirtCloud</a>
+          <a class="ghost" href="http://161.118.253.28/vm/novnc/" target="_blank" rel="noopener">🖧 noVNC</a>
+        </div>
+        <div class="vm-row">
+          <a class="ghost" href="http://161.118.253.28/kuma/" target="_blank" rel="noopener">📊 Kuma</a>
+          <a class="ghost" href="http://161.118.253.28/monitor/" target="_blank" rel="noopener">📈 Monitor</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="ico">🔥</span> Firestore — koleksi <span class="c">chats</span></h2>
+    <div class="note" id="fbNote"></div>
+    <div id="msgs"><div class="msg empty">Memuat…</div></div>
+    <div class="row">
+      <input type="text" id="inp" placeholder="Ketik pesan untuk disimpan ke Firestore… (Enter = kirim)">
+      <button id="btn">Simpan</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="ico">⌨️</span> Hermes CLI — Command Cheatsheet</h2>
+    <div class="cmds">
+      <div><b>hermes setup</b> — konfigurasi API keys</div>
+      <div><b>hermes chat</b> — interactive AI chat</div>
+      <div><b>hermes ask "…"</b> — pertanyaan cepat</div>
+      <div><b>hermes orchestrator "…"</b> — agent otonom</div>
+      <div><b>hermes coding</b> — mode coding interaktif</div>
+      <div><b>hermes ai-best</b> — runtime AI terbaik</div>
+      <div><b>hermes firebase status</b> — info + data Firestore</div>
+      <div><b>hermes firebase admin</b> — Admin SDK (service account)</div>
+      <div><b>hermes firebase admin save "…"</b> — simpan dokumen</div>
+      <div><b>hermes vm status</b> — Oracle VM WebVirtCloud live</div>
+      <div><b>hermes vm console</b> — buka VM Console (CF)</div>
+      <div><b>hermes antigravity install</b> — Google Antigravity IDE (linux/ARM64)</div>
+      <div><b>hermes antigravity vnc</b> — jalankan IDE headless via VNC :5905</div>
+      <div><b>hermes dashboard deploy</b> — deploy dashboard ini</div>
+      <div><b>hermes status</b> — health check penuh</div>
+      <div><b>hermes models</b> — daftar model AI</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="ico">🌐</span> Endpoint & Links</h2>
+    <div class="links">
+      <a href="https://ai.roadfx.biz.id" target="_blank" rel="noopener">gateway</a>
+      <a href="https://gateway.roadfx.biz.id" target="_blank" rel="noopener">mirror</a>
+      <a href="https://factory.roadfx.biz.id" target="_blank" rel="noopener">cf-ai</a>
+      <a href="https://dashboard.roadfx.biz.id" target="_blank" rel="noopener">roc-dashboard</a>
+      <a href="https://status.roadfx.biz.id" target="_blank" rel="noopener">status</a>
+      <a href="https://ais-dev-jqizmthqeu2hdc4e3pgh63-70765440683.asia-east1.run.app" target="_blank" rel="noopener">ais-dev</a>
+      <a href="https://ai.studio/apps/90047957-bcb6-4808-8e03-3df0c091f88f" target="_blank" rel="noopener">ai-studio-app 🔒</a>
+      <a href="https://vm.roadfx.biz.id/vm" target="_blank" rel="noopener">vm-console 🖥️</a>
+      <a href="https://vm.roadfx.biz.id/health" target="_blank" rel="noopener">vm-health-json</a>
+      <a href="http://161.118.253.28/wvc/" target="_blank" rel="noopener">webvirtcloud 🛡️</a>
+      <a href="http://161.118.253.28/kuma/" target="_blank" rel="noopener">kuma 📊</a>
+      <a href="http://161.118.253.28/monitor/" target="_blank" rel="noopener">monitor 📈</a>
+      <a href="https://planning-with-ai-36675.web.app" target="_blank" rel="noopener">firebase-hosting</a>
+      <a href="https://github.com/ivansslo/roc-agentsroute" target="_blank" rel="noopener">github</a>
+    </div>
+  </div>
+
+  <footer>⚡ by Ivan Ssl (ivansslo) — ROC AgentRoute v5.13.1 "Oracle" · dibuat 16 Juli 2026</footer>
+</div>
+
+<script type="module">
+// ─── Clock ────────────────────────────────────────────────────────────────
+const clockEl = document.getElementById('clock');
+setInterval(()=>{ clockEl.textContent = new Date().toLocaleString('id-ID'); }, 1000);
+
+// ─── Copy AI Studio link ──────────────────────────────────────────────────
+document.getElementById('copyStudio')?.addEventListener('click', function(){
+  const u = 'https://ai.studio/apps/90047957-bcb6-4808-8e03-3df0c091f88f';
+  const btn = this;
+  const done = () => { btn.textContent = 'tersalin ✓'; setTimeout(()=>btn.textContent='salin link', 1500); };
+  if (navigator.clipboard) navigator.clipboard.writeText(u).then(done).catch(()=>{ btn.textContent = u; });
+  else btn.textContent = u;
+});
+
+// ─── Oracle VM: copy IP + live status via CF HTTPS bridge ──────────────────
+document.getElementById('copyVmIp')?.addEventListener('click', function(){
+  const btn = this;
+  const done = () => { btn.textContent = 'tersalin ✓'; setTimeout(()=>btn.textContent='salin IP', 1500); };
+  if (navigator.clipboard) navigator.clipboard.writeText('161.118.253.28').then(done).catch(()=>{ btn.textContent='161.118.253.28'; });
+  else btn.textContent = '161.118.253.28';
+});
+
+(async function vmLive(){
+  const el = document.getElementById('vmStatus');
+  const svc = document.getElementById('vmSvc');
+  if (!el) return;
+  const t0 = performance.now();
+  try {
+    const ctl = new AbortController(); setTimeout(()=>ctl.abort(), 8000);
+    const r = await fetch('https://vm.roadfx.biz.id/health?b='+Date.now(), {signal:ctl.signal, cache:'no-store'});
+    const d = await r.json();
+    const ms = Math.round(performance.now()-t0);
+    if (d.status === 'ok') {
+      el.className = 'vm-status on';
+      el.textContent = `● VM ONLINE — ${d.host} · ${d.region} · ${ms} ms (via Cloudflare bridge)`;
+      (d.services||[]).forEach(s=>{
+        const chip = document.createElement('span');
+        chip.textContent = '▸ '+s;
+        svc.appendChild(chip);
+      });
+    } else {
+      el.className = 'vm-status off';
+      el.textContent = '● VM bermasalah: '+JSON.stringify(d);
+    }
+  } catch(e) {
+    el.className = 'vm-status off';
+    el.textContent = '● VM tidak terjangkau / bridge error (cek https://vm.roadfx.biz.id/health)';
+  }
+})();
+
+// ─── Endpoint reachability probe (no-cors: opaque = reachable) ────────────
+const EPS = [
+  ['Gateway (primary)','https://ai.roadfx.biz.id'],
+  ['Gateway (mirror)','https://gateway.roadfx.biz.id'],
+  ['Gateway (backup)','https://api.roadfx.biz.id'],
+  ['CF AI Factory','https://factory.roadfx.biz.id'],
+  ['Status (Kuma)','https://status.roadfx.biz.id'],
+  ['AIS-DEV','https://ais-dev-jqizmthqeu2hdc4e3pgh63-70765440683.asia-east1.run.app'],
+  ['Firebase Hosting','https://planning-with-ai-36675.web.app'],
+  ['Oracle VM Console','https://vm.roadfx.biz.id'],
+  ['Oracle VM Health (CF bridge)','https://vm.roadfx.biz.id/health'],
+  ['Monitor','https://monitor.roadfx.biz.id'],
+  ['Cloud Run (legacy)','https://ai-vitality-819208434965.us-west1.run.app'],
+];
+const grid = document.getElementById('endpoints');
+EPS.forEach(([name,url])=>{
+  const el = document.createElement('div');
+  el.className='card';
+  el.innerHTML = `<h3>${name}<span class="dot"></span></h3>
+    <div class="url">${url}</div><div class="stat">probing…</div>`;
+  grid.appendChild(el);
+});
+document.querySelectorAll('#endpoints .card').forEach(async (card,i)=>{
+  const [,url]=EPS[i], dot=card.querySelector('.dot'), stat=card.querySelector('.stat');
+  const t0=performance.now();
+  try{
+    const ctl=new AbortController(); setTimeout(()=>ctl.abort(),6000);
+    await fetch(url,{mode:'no-cors',signal:ctl.signal,cache:'no-store'});
+    dot.classList.add('on');
+    stat.textContent=`ONLINE · ${Math.round(performance.now()-t0)} ms`;
+  }catch(e){
+    dot.classList.add('off');
+    stat.textContent='UNREACHABLE / CORS-blocked';
+  }
+});
+
+// ─── Firebase (Firestore) ─────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyAPH8DG8Ji6Zjcid3s6qtnU9J8qBKGrpOQ",
+  authDomain: "planning-with-ai-36675.firebaseapp.com",
+  projectId: "planning-with-ai-36675",
+  storageBucket: "planning-with-ai-36675.firebasestorage.app",
+  messagingSenderId: "877262776320",
+  appId: "1:877262776320:web:44329b332a5dcddf0210e5"
+};
+const msgs = document.getElementById('msgs');
+const note = document.getElementById('fbNote');
+const showNote = t => { note.textContent=t; note.style.display='block'; };
+
+function renderDocs(docs){
+  if(!docs.length){ msgs.innerHTML='<div class="msg empty">Belum ada pesan di koleksi chats.</div>'; return; }
+  msgs.innerHTML='';
+  docs.forEach(d=>{
+    const x=d.data();
+    const ts=x.timestamp?.toDate ? x.timestamp.toDate().toLocaleString('id-ID') : '';
+    const el=document.createElement('div');
+    el.className='msg';
+    el.innerHTML=`<div class="meta">${x.sender||'anon'} · ${ts}</div>`;
+    const p=document.createElement('div');
+    p.textContent=x.text||'';
+    el.appendChild(p);
+    msgs.appendChild(el);
+  });
+}
+
+async function initFirebase(){
+  try{
+    const { initializeApp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js');
+    const { getFirestore, collection, query, orderBy, limit, getDocs, addDoc, serverTimestamp }
+      = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+    const db = getFirestore(initializeApp(firebaseConfig));
+    const col = collection(db,'chats');
+
+    async function load(){
+      try{
+        let snap;
+        try{ snap=await getDocs(query(col,orderBy('timestamp','desc'),limit(20))); }
+        catch{ snap=await getDocs(query(col,limit(20))); }
+        renderDocs(snap.docs);
+      }catch(e){
+        msgs.innerHTML='<div class="msg empty">Tidak bisa membaca Firestore.</div>';
+        if(String(e).includes('permiss')||e.code==='permission-denied')
+          showNote('🔒 Security Rules menolak read anonim. Longgarkan rules untuk koleksi chats, atau pakai service account (hermes firebase admin).');
+        else
+          showNote('⚠️ '+e.message+' — pastikan Firestore Database sudah dibuat di Firebase Console.');
+      }
+    }
+    await load();
+
+    const btn=document.getElementById('btn'), inp=document.getElementById('inp');
+    async function send(){
+      const text=inp.value.trim(); if(!text) return;
+      btn.disabled=true;
+      try{
+        await addDoc(col,{sender:'dashboard', text, timestamp:serverTimestamp()});
+        inp.value=''; hideNote(); await load();
+      }catch(e){
+        if(String(e).includes('permiss')||e.code==='permission-denied')
+          showNote('🔒 Tulis ditolak Security Rules. Tambahkan rule allow create untuk chats, atau: hermes firebase admin save "pesan"');
+        else showNote('⚠️ '+e.message);
+      }finally{ btn.disabled=false; }
+    }
+    btn.addEventListener('click',send);
+    inp.addEventListener('keydown',e=>{ if(e.key==='Enter') send(); });
+  }catch(err){
+    // Preview sandbox / offline: Firebase SDK tidak bisa dimuat
+    msgs.innerHTML='<div class="msg empty">Mode preview/offline — Firebase SDK butuh koneksi internet. Buka dashboard ini via Hosting untuk mode live.</div>';
+  }
+}
+function hideNote(){ note.style.display='none'; }
+initFirebase();
+</script>
+</body>
+</html>

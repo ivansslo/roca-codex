@@ -1,0 +1,75 @@
+{
+  "name": "ROCAgents AI Autonomous Workflow Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rocagents-ai-trigger",
+        "options": {}
+      },
+      "name": "Webhook Inbound Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "rocagents-ai-trigger"
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "http://localhost:3000/api/chat",
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": "={\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"text\": \"{{ $json.body.message || $json.body.prompt || 'Synthesize task for OCI cluster' }}\"\n    }\n  ],\n  \"provider\": \"{{ $json.body.provider || 'groq' }}\",\n  \"model\": \"{{ $json.body.model || 'openai/gpt-oss-120b' }}\"\n}"
+      },
+      "name": "ROCAgents Orchestrator Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"success\",\n  \"agent\": \"ROCAgents\",\n  \"response\": {{ $json.text }},\n  \"executionLogs\": {{ $json.logs }}\n}"
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        750,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Inbound Trigger": {
+      "main": [
+        [
+          {
+            "node": "ROCAgents Orchestrator Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ROCAgents Orchestrator Call": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {}
+}

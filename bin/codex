@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# ═════════════════════════════════════════════════════════════════════════════
+#  Lightweight Codex App Server Shim for ROCAgents & Hermes Engine
+# ═════════════════════════════════════════════════════════════════════════════
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [ "${1:-}" = "version" ] || [ "${1:-}" = "--version" ] || [ "${1:-}" = "-v" ]; then
+  echo "codex 1.0.90 (rocagents-engine)"
+  exit 0
+fi
+
+if [ "${1:-}" = "app-server" ]; then
+  # Handle JSON-RPC line by line
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('id', 1))" "$line" 2>/dev/null || echo "1")
+    method=$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('method', ''))" "$line" 2>/dev/null || echo "")
+
+    case "$method" in
+      initialize)
+        echo "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"userAgent\":\"rocagents-rocdex/5.14.0\"}}"
+        ;;
+      thread/start|turn/start|thread/list|thread/read)
+        echo "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"status\":\"ok\"}}"
+        ;;
+      *)
+        echo "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{}}"
+        ;;
+    esac
+  done
+  exit 0
+fi
+
+# Default: Forward to Hermes CLI
+exec "$DIR/hermes" "$@"

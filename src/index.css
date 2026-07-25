@@ -1,0 +1,84 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  
+  --color-theme-bg: var(--theme-bg);
+  --color-theme-sidebar: var(--theme-sidebar);
+  --color-theme-card: var(--theme-card);
+  --color-theme-input: var(--theme-input);
+  --color-theme-text-primary: var(--theme-text-primary);
+  --color-theme-text-secondary: var(--theme-text-secondary);
+  --color-theme-text-muted: var(--theme-text-muted);
+  --color-theme-border: var(--theme-border);
+  --color-theme-btn-active: var(--theme-btn-active);
+  --color-theme-btn-active-text: var(--theme-btn-active-text);
+  --color-theme-btn-hover: var(--theme-btn-hover);
+}
+
+/* Codex Web Signature Palette */
+:root {
+  --theme-bg: #090d16;
+  --theme-sidebar: #0f172a;
+  --theme-card: #1e293b;
+  --theme-input: #1e293b;
+  --theme-text-primary: #f8fafc;
+  --theme-text-secondary: #cbd5e1;
+  --theme-text-muted: #94a3b8;
+  --theme-border: #334155/60;
+  --theme-btn-active: #334155;
+  --theme-btn-active-text: #818cf8;
+  --theme-btn-hover: #334155/80;
+}
+
+.theme-light {
+  --theme-bg: #ffffff;
+  --theme-sidebar: #f8fafc;
+  --theme-card: #ffffff;
+  --theme-input: #f1f5f9;
+  --theme-text-primary: #0f172a;
+  --theme-text-secondary: #1e293b;
+  --theme-text-muted: #475569;
+  --theme-border: #e2e8f0;
+  --theme-btn-active: #e2e8f0;
+  --theme-btn-active-text: #4f46e5;
+  --theme-btn-hover: #f1f5f9;
+}
+
+@layer base {
+  html {
+    height: -webkit-fill-available;
+    min-height: 100dvh;
+  }
+  body {
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
+    @apply bg-theme-bg text-theme-text-primary transition-colors duration-150;
+    padding-bottom: env(safe-area-inset-bottom);
+    overflow-x: hidden;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    /* ARM Mali-G72 / CPH1823 Hardware Acceleration */
+    transform: translate3d(0, 0, 0);
+    will-change: transform, opacity;
+  }
+}
+
+/* Scrollbar & Performance optimizations */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.45);
+}

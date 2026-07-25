@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rocd"
+version = "5.4.1"
+description = "PRoot-Distro is a lightweight rootless Linux container management utility built around proot."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "GPL-3.0-only"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.urls]
+'Homepage' = 'https://github.com/termux/rocd'
+'Repository' = 'https://github.com/termux/rocd'
+'Issue Tracker' = 'https://github.com/termux/rocd/issues'
+
+[project.scripts]
+rocd = "rocd_mod.cli:main"
+pd = "rocd_mod.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["rocd_mod*"]
+
+[tool.setuptools.package-data]
+"rocd_mod" = ["completions/*"]
+
+[tool.setuptools.data-files]
+"share/bash-completion/completions" = ["rocd_mod/completions/rocd.bash"]
+"share/zsh/site-functions" = ["rocd_mod/completions/_rocd"]
+"share/fish/vendor_completions.d" = ["rocd_mod/completions/rocd.fish"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "live: hits the network or executes proot; skipped unless RUN_LIVE_TESTS=1 is set",
+]

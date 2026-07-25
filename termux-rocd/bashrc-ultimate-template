@@ -1,0 +1,70 @@
+# ~/.bashrc — Ultimate Termux Default Shell (Local Ubuntu + OCI Remote via Tailscale)
+# Owner: Ivan Ssl (ivansslo) — 2026-07-23
+# Features:
+# - Safe auto-launch ubuntu container via native rocd engine ($PREFIX/bin/ubuntu)
+# - Optional OCI remote default via Tailscale 100.91.232.91 (if ~/.oci-default-shell-enabled exists)
+# - Fallback chain: OCI Tailscale → Local Ubuntu → Termux Host
+# - Prevents infinite loop via UBUNTU_ACTIVE & OCI_ALREADY
+
+# Colors for prompt
+export TERM=xterm-256color
+
+# --- OCI Remote Auto-SSH (Priority if enabled) ---
+# Enable with: touch ~/.oci-default-shell-enabled
+# Disable with: rm ~/.oci-default-shell-enabled
+# Temporary local only with: TERMUX_OCI_LOCAL=1 bash  or  touch ~/.local-only
+# Force local ubuntu with: touch ~/.local-ubuntu-only
+
+OCI_TS_IP="${OCI_TS_IP:-100.91.232.91}"
+ROADFX_IP="${ROADFX_IP:-100.100.237.104}"
+ROCFX_IP="${ROCFX_IP:-100.106.22.112}"
+
+if [[ $- == *i* ]] && [[ -z "$OCI_ALREADY" ]] && [[ -z "$UBUNTU_ACTIVE" ]]; then
+  # Check for forced local modes
+  if [[ -f "$HOME/.local-only" ]] || [[ "$TERMUX_OCI_LOCAL" == "1" ]]; then
+    # Stay in Termux host, do nothing
+    :
+  elif [[ -f "$HOME/.oci-default-shell-enabled" ]] && [[ ! -f "$HOME/.local-ubuntu-only" ]]; then
+    # Try OCI remote first via Tailscale
+    if command -v tailscale >/dev/null 2>&1; then
+      if tailscale ping --c=1 --timeout=2s $OCI_TS_IP >/dev/null 2>&1 || ping -c1 -W2 $OCI_TS_IP >/dev/null 2>&1; then
+        export OCI_ALREADY=1
+        echo -e "\033[0;36m🚀 Connecting to OCI Ubuntu $OCI_TS_IP via Tailscale...\033[0m"
+        echo -e "\033[0;33m   (disable: rm ~/.oci-default-shell-enabled | local only: touch ~/.local-only)\033[0m"
+        # Use -tt to fix ioctl job control warning in proot
+        ssh -tt -o ServerAliveInterval=20 -o StrictHostKeyChecking=no root@$OCI_TS_IP "bash -l" 2>/dev/null || \
+        ssh -tt -o ServerAliveInterval=20 -o StrictHostKeyChecking=no ubuntu@$OCI_TS_IP "bash -l" 2>/dev/null || \
+        ssh -tt root@$OCI_TS_IP 2>/dev/null || \
+        echo "⚠️ OCI $OCI_TS_IP unreachable, falling back to local ubuntu..."
+      fi
+    fi
+  fi
+fi
+
+# --- Local Ubuntu Auto-Launch via rocd native engine (fallback) ---
+# This is what you have now in screenshot — keep it as fallback
+if [ -t 0 ] && [ -x "$PREFIX/bin/ubuntu" ] && [ -z "$UBUNTU_ACTIVE" ] && [ -z "$OCI_ALREADY" ]; then
+  if [ ! -f "$HOME/.local-only" ]; then
+    export UBUNTU_ACTIVE=1
+    echo -e "\033[0;32m🐳 Entering Local Ubuntu Container (root@localhost) via rocd native...\033[0m"
+    echo -e "\033[0;33m   (skip: touch ~/.local-only | OCI remote: touch ~/.oci-default-shell-enabled)\033[0m"
+    ubuntu || echo "⚠️ Container exited. Retaining Termux host session."
+  fi
+fi
+
+# --- Aliases & Helpers for switching ---
+alias local-only='touch ~/.local-only && echo "Local-only mode enabled (stay in Termux host). rm ~/.local-only to disable."'
+alias local-ubuntu='rm -f ~/.local-only ~/.oci-default-shell-enabled; touch ~/.local-ubuntu-only; echo "Local Ubuntu mode forced. Will auto-enter local ubuntu container."'
+alias oci-remote='rm -f ~/.local-only ~/.local-ubuntu-only; touch ~/.oci-default-shell-enabled; echo "OCI Remote mode enabled. Will auto-SSH to $OCI_TS_IP on next Termux restart."'
+alias termux-host='rm -f ~/.oci-default-shell-enabled ~/.local-ubuntu-only; touch ~/.local-only; echo "Termux host only mode. No auto container."'
+alias ubuntu-fix='bash ~/rocagents/termux-rocd/fix-proot-ubuntu-localhost.sh'
+alias oci-shell='OCI_TS_IP=$OCI_TS_IP ssh -tt root@$OCI_TS_IP "bash -l" || ssh -tt ubuntu@$OCI_TS_IP "bash -l"'
+alias rocd-oci='oci-shell'
+alias oci-tunnel='autossh -M 0 -L 11434:127.0.0.1:11434 root@$OCI_TS_IP -N -f && echo "Tunnel 11434 -> $OCI_TS_IP:11434 OK" && curl -s http://127.0.0.1:11434/api/tags | head -n 5'
+
+# Quick status
+alias mesh-status='echo "=== Tailscale Mesh ==="; tailscale status 2>&1 | head -n 20; echo ""; echo "IPs:"; tailscale ip -4 2>&1; echo ""; echo "Ping:"; tailscale ping $OCI_TS_IP 2>&1 | head -n 1; tailscale ping $ROADFX_IP 2>&1 | head -n 1'
+
+# Fix for .bashrc Not a directory bug inside ubuntu container (shown in your screenshot)
+# In container, /root/.bashrc should be file, not directory
+# Run this inside container once: rm -rf ~/.bashrc && cp /etc/skel/.bashrc ~/.bashrc && echo "fixed"

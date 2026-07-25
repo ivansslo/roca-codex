@@ -1,0 +1,6 @@
+{
+  "name": "DevAgent Orchestrator",
+  "description": "Autonomous developer agent with tool-calling capabilities and task orchestration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
