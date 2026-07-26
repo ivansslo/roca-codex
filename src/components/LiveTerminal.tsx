@@ -21,6 +21,7 @@ export function LiveTerminal({ isLoading, logs = [] }: LiveTerminalProps) {
   const terminalEndRef = useRef<HTMLDivElement>(null);
   const lineIdRef = useRef(0);
   const esRef = useRef<EventSource | null>(null);
+  const processedCountRef = useRef(0);
 
   const addLine = (text: string, type: TerminalLine['type'] = 'info') => {
     const now = new Date();
@@ -28,73 +29,73 @@ export function LiveTerminal({ isLoading, logs = [] }: LiveTerminalProps) {
     setLines(prev => [...prev, { id: lineIdRef.current++, text, type, timestamp: ts }]);
   };
 
-  // Connect to SSE terminal stream
+  // Populate terminal dari logs prop — satu-satunya sumber data tool logs
+  // Bekerja di semua environment (Termux, desktop, mobile) tanpa dependensi SSE terpisah
   useEffect(() => {
-    const es = new EventSource('/api/terminal-stream');
-    esRef.current = es;
+    if (!logs || logs.length === 0) return;
 
-    es.onopen = () => {
-      setConnected(true);
-      addLine('🟢 Terminal stream connected — listening for live output...', 'status');
-    };
+    // Proses hanya log entries yang belum ditampilkan
+    const newLogs = logs.slice(processedCountRef.current);
+    if (newLogs.length === 0) return;
 
-    es.addEventListener('tool_start', (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data);
-        setActiveTool(data.toolName);
-        addLine(`▶ Running ${data.toolName}${data.toolArgs?.command ? `: $ ${data.toolArgs.command}` : ''}...`, 'info');
-      } catch (_) {}
-    });
+    processedCountRef.current = logs.length;
 
-    es.addEventListener('tool_output', (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.stdout && data.stdout.trim()) {
-          const outLines = data.stdout.trim().split('\n');
+    newLogs.forEach((log) => {
+      const cmd = log.args?.command || log.args?.cmd || '';
+      setActiveTool(log.toolName);
+      addLine(`▶ Running ${log.toolName}${cmd ? `: $ ${cmd}` : ''}...`, 'info');
+
+      if (log.result) {
+        // Tampilkan stdout jika ada
+        if (log.result.stdout) {
+          const outLines = log.result.stdout.trim().split('\n');
           outLines.forEach((line: string) => addLine(line, 'stdout'));
         }
-        if (data.stderr && data.stderr.trim()) {
-          const errLines = data.stderr.trim().split('\n');
+        // Tampilkan stderr jika ada
+        if (log.result.stderr) {
+          const errLines = log.result.stderr.trim().split('\n');
           errLines.forEach((line: string) => addLine(line, 'stderr'));
         }
-      } catch (_) {}
-    });
-
-    es.addEventListener('tool_result', (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data);
-        const status = data.result?.status === 'error' ? '❌' : '✅';
-        const exitCode = data.result?.exitCode;
+        const status = log.result.status === 'error' ? '❌' : '✅';
+        const exitCode = log.result.exitCode;
         const suffix = exitCode !== undefined ? ` (exit ${exitCode})` : '';
-        addLine(`${status} ${data.toolName} finished${suffix}`, data.result?.status === 'error' ? 'error' : 'success');
-        setActiveTool(null);
-      } catch (_) {}
+        addLine(`${status} ${log.toolName} finished${suffix}`, log.result.status === 'error' ? 'error' : 'success');
+      }
+      setActiveTool(null);
     });
 
-    es.addEventListener('status', (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.message) addLine(`⚙ ${data.message}`, 'status');
-      } catch (_) {}
-    });
-
-    es.onerror = () => {
-      setConnected(false);
-      addLine('🔴 Terminal stream disconnected — reconnecting...', 'error');
-    };
-
-    return () => {
-      es.close();
-      esRef.current = null;
-    };
-  }, []);
-
-  // When loading finishes, show summary from actual logs
-  useEffect(() => {
-    if (!isLoading && logs.length > 0) {
+    if (!isLoading && processedCountRef.current === logs.length) {
       addLine(`📊 Execution complete — ${logs.length} tool(s) executed`, 'success');
     }
-  }, [isLoading]);
+  }, [logs, isLoading]);
+
+  // Connect ke SSE /api/terminal-stream untuk real-time output jika tersedia
+  useEffect(() => {
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource('/api/terminal-stream');
+      esRef.current = es;
+
+      es.onopen = () => {
+        setConnected(true);
+      };
+
+      es.onerror = () => {
+        setConnected(false);
+      };
+    } catch (_) {
+      // SSE tidak support di environment ini (Termux WebView dll) — tidak masalah
+      // logs prop sudah cukup sebagai fallback
+      setConnected(false);
+    }
+
+    return () => {
+      if (es) {
+        es.close();
+        esRef.current = null;
+      }
+    };
+  }, []);
 
   // Auto-scroll
   useEffect(() => {

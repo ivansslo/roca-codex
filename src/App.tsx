@@ -25,12 +25,11 @@ const SelfDevelopmentHub = React.lazy(() =>
 export default function App() {
   // ---- Layout / navigation ----
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
-  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState<boolean>(() => JSON.parse(localStorage.getItem('ROC_TERMINAL_OPEN') || 'false'));
   const [activeTab, setActiveTab] = useState<NavTab>('chat');
   const [settingsSection, setSettingsSection] = useState<'general' | 'sync' | 'files' | 'upgrade'>('general');
   const [theme, setTheme] = useState<'dark' | 'light' | 'high-contrast'>(() => (localStorage.getItem('ROC_THEME') as any) || 'dark');
   const [sendOnEnter, setSendOnEnter] = useState<boolean>(() => JSON.parse(localStorage.getItem('ROC_SEND_ON_ENTER') || 'true'));
-  const [autoMinimizeOnIdle, setAutoMinimizeOnIdle] = useState<boolean>(() => JSON.parse(localStorage.getItem('ROC_AUTO_MINIMIZE_ON_IDLE') || 'true'));
 
   // ---- Chat / sessions ----
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -76,7 +75,7 @@ export default function App() {
   // ---- Persistence effects ----
   useEffect(() => { localStorage.setItem('ROC_PERSONA', persona); }, [persona]);
   useEffect(() => { localStorage.setItem('ROC_SEND_ON_ENTER', JSON.stringify(sendOnEnter)); }, [sendOnEnter]);
-  useEffect(() => { localStorage.setItem('ROC_AUTO_MINIMIZE_ON_IDLE', JSON.stringify(autoMinimizeOnIdle)); }, [autoMinimizeOnIdle]);
+  useEffect(() => { localStorage.setItem('ROC_TERMINAL_OPEN', JSON.stringify(terminalOpen)); }, [terminalOpen]);
   useEffect(() => { localStorage.setItem('ROC_CHAT_MINIMIZED', JSON.stringify(chatMinimized)); }, [chatMinimized]);
   useEffect(() => { localStorage.setItem('ROC_MINIMIZE_TIMER', String(minimizeTimer)); }, [minimizeTimer]);
   useEffect(() => { localStorage.setItem('ROC_AUTO_SAVE_MEMORY', JSON.stringify(autoSaveMemoryEnabled)); }, [autoSaveMemoryEnabled]);
@@ -203,10 +202,12 @@ export default function App() {
 
     const patch = (p: Partial<Message>) => setSessions(prev => prev.map(s => s.id !== activeSessionId ? s : { ...s, messages: s.messages.map(m => m.id === modelMsgId ? { ...m, ...p } : m) }));
 
+    const toolStartQueue: any[] = [];
     await streamChat({ messages: history, model: selectedModel, provider: selectedProvider, persona, signal: controller.signal }, {
       onStatus: (msg) => patch({ statusMessage: msg }),
       onChunk: (chunk) => { if (chunk) { accText += chunk; patch({ text: accText, isTyping: false }); } },
-      onToolResult: (data) => { if (data) { accLogs.push(data); patch({ logs: [...accLogs] }); } },
+      onToolStart: (data) => { if (data?.toolArgs) toolStartQueue.push(data.toolArgs); },
+      onToolResult: (data) => { if (data) { const args = toolStartQueue.shift() || {}; accLogs.push({ toolName: data.toolName, args, result: data.result }); patch({ logs: [...accLogs] }); } },
       onDone: (result) => {
         const finalText = (result?.text && String(result.text).trim()) ? String(result.text) : (accText || '⚠️ Respons kosong.');
         const finalLogs = (Array.isArray(result?.logs) && result.logs.length) ? result.logs : accLogs;
@@ -359,8 +360,8 @@ export default function App() {
                       <span className="text-sm text-theme-text-primary">Send on Enter (Shift+Enter = newline)</span>
                     </label>
                     <label className="flex items-center gap-3 cursor-pointer select-none">
-                      <input type="checkbox" checked={autoMinimizeOnIdle} onChange={(e) => setAutoMinimizeOnIdle(e.target.checked)} className="rounded border-theme-border bg-theme-input text-indigo-600 h-4 w-4 cursor-pointer" />
-                      <span className="text-sm text-theme-text-primary">Auto-minimize chat on 5m inactivity</span>
+                      <input type="checkbox" checked={terminalOpen} onChange={(e) => setTerminalOpen(e.target.checked)} className="rounded border-theme-border bg-theme-input text-indigo-600 h-4 w-4 cursor-pointer" />
+                      <span className="text-sm text-theme-text-primary">Console (Thinking &amp; Execution Log)</span>
                     </label>
                   </div>
                 </div>
