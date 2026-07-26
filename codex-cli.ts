@@ -40,12 +40,24 @@ async function runTurn(messages: any[], model: string, provider: string, persona
     model, provider, persona,
     onProgress: (evt: any) => {
       if (evt.type === "chunk" && evt.data?.text) { process.stdout.write(evt.data.text); buf += evt.data.text; }
-      else if (evt.type === "status" && evt.data?.message) { /* silent by default */ }
-      else if (evt.type === "tool_start" && evt.data?.toolName) { process.stdout.write(`\n${C.gray}  ⚙ ${evt.data.toolName}${C.reset}`); }
+      else if (evt.type === "status" && evt.data?.message) { /* silent */ }
+      else if (evt.type === "tool_start" && evt.data?.toolName) {
+        const cmd = evt.data.toolArgs?.command || evt.data.toolArgs?.cmd || '';
+        process.stdout.write(`\n${C.gray}  ⚙ ${evt.data.toolName}${cmd ? ': ' + cmd : ''}${C.reset}`);
+      }
+      else if (evt.type === "tool_output" && evt.data) {
+        if (evt.data.stdout && String(evt.data.stdout).trim()) {
+          String(evt.data.stdout).trim().split('\n').forEach((l: string) => process.stdout.write(`\n${C.green}  │ ${l}${C.reset}`));
+        }
+        if (evt.data.stderr && String(evt.data.stderr).trim()) {
+          String(evt.data.stderr).trim().split('\n').forEach((l: string) => process.stdout.write(`\n${C.red}  │ ${l}${C.reset}`));
+        }
+      }
       else if (evt.type === "tool_result" && evt.data?.toolName) {
         const r = evt.data.result || {};
         const ok = r.status === "success" || !r.error;
-        process.stdout.write(`${C.gray} ${ok ? "✓" : "✗"}${C.reset}`);
+        const exitCode = r.exitCode !== undefined ? ` (exit ${r.exitCode})` : '';
+        process.stdout.write(`${C.gray} ${ok ? '✓' : '✗'}${exitCode}${C.reset}`);
       }
     }
   });

@@ -29,10 +29,12 @@ export function LiveTerminal({ isLoading, logs = [] }: LiveTerminalProps) {
     setLines(prev => [...prev, { id: lineIdRef.current++, text, type, timestamp: ts }]);
   };
 
-  // Populate terminal dari logs prop — satu-satunya sumber data tool logs
-  // Bekerja di semua environment (Termux, desktop, mobile) tanpa dependensi SSE terpisah
+  // Populate terminal dari logs prop — fallback jika SSE tidak tersedia
+  // Skip jika SSE sudah terhubung (data real-time dari SSE lebih baik)
   useEffect(() => {
     if (!logs || logs.length === 0) return;
+    // Jika SSE sudah connected, biarkan SSE handle real-time — tidak perlu duplikasi dari logs
+    if (connected) return;
 
     // Proses hanya log entries yang belum ditampilkan
     const newLogs = logs.slice(processedCountRef.current);
@@ -79,6 +81,39 @@ export function LiveTerminal({ isLoading, logs = [] }: LiveTerminalProps) {
       es.onopen = () => {
         setConnected(true);
       };
+
+      // Handle real-time tool events from SSE
+      es.addEventListener('tool_start', (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data);
+          const cmd = data.toolArgs?.command || data.toolArgs?.cmd || '';
+          setActiveTool(data.toolName);
+          addLine(`▶ Running ${data.toolName}${cmd ? ': $ ' + cmd : ''}...`, 'info');
+        } catch (_) {}
+      });
+
+      es.addEventListener('tool_output', (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.stdout && String(data.stdout).trim()) {
+            String(data.stdout).trim().split('\n').forEach((line: string) => addLine(line, 'stdout'));
+          }
+          if (data.stderr && String(data.stderr).trim()) {
+            String(data.stderr).trim().split('\n').forEach((line: string) => addLine(line, 'stderr'));
+          }
+        } catch (_) {}
+      });
+
+      es.addEventListener('tool_result', (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data);
+          const r = data.result || {};
+          const ok = r.status === 'success' || !r.error;
+          const exitCode = r.exitCode !== undefined ? ` (exit ${r.exitCode})` : '';
+          addLine(`${ok ? '✅' : '❌'} ${data.toolName} finished${exitCode}`, ok ? 'success' : 'error');
+          setActiveTool(null);
+        } catch (_) {}
+      });
 
       es.onerror = () => {
         setConnected(false);
