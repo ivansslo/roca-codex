@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# ⚡ Codex CLI wrapper — runs the ROCAgents agent engine in the terminal (real-time streaming, tools, persona).
+# Pakai:  ./codex "tulis fungsi X"   |   ./codex   (REPL)   |   ./codex --help
+set -uo pipefail
+DIR="$(cd "$(dirname "$0")" && pwd)"
+
+if [ -x "$DIR/node_modules/.bin/tsx" ]; then
+  exec "$DIR/node_modules/.bin/tsx" "$DIR/codex-cli.ts" "$@"
+else
+  exec npx -y tsx "$DIR/codex-cli.ts" "$@"
+fi

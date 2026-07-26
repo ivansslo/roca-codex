@@ -1,6 +1,6 @@
 {
   "name": "rocagents",
-  "version": "5.18.1",
+  "version": "5.19.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,8 @@
     "start": "NODE_OPTIONS='--dns-result-order=ipv4first' node dist/server.cjs",
     "clean": "rm -rf dist server.js",
     "postinstall": "node scripts/postinstall.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "codex": "tsx codex-cli.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
