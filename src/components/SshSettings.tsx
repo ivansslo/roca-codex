@@ -7,7 +7,7 @@ export function SshSettings() {
   const [host, setHost] = useState('127.0.0.1');
   const [port, setPort] = useState('8022');
   const [user, setUser] = useState('');
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState('ubuntu');
   const [keyPath, setKeyPath] = useState('/storage/emulated/0/SshDaemon/ssh_host_rsa_key');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -113,6 +113,19 @@ export function SshSettings() {
           <p className="text-[10px] text-theme-text-muted leading-relaxed">
             Password & key dipakai alternatif: isi <strong>password</strong> untuk auth password, atau kosongkan & isi <strong>path key</strong> untuk auth key. Pastikan ssh-daemon aktif di device.
           </p>
+
+          <details className="text-[10px] text-theme-text-muted border border-theme-border rounded-lg p-2.5 bg-theme-input/40">
+            <summary className="cursor-pointer font-semibold text-theme-text-secondary">Bantuan CLI (opsional — tes manual via <code>ssh</code>)</summary>
+            <pre className="mt-2 whitespace-pre-wrap break-words text-emerald-300/90 font-mono leading-relaxed">{`# 1. Load key ke agent (sekali per sesi Termux)
+eval $(ssh-agent)
+ssh-add ~/.ssh/rocagents_key
+
+# 2. Tes konek manual
+ssh -i ~/.ssh/rocagents_key -p 8022 ubuntu@127.0.0.1
+# atau pakai password default:
+ssh -p 8022 ubuntu@127.0.0.1   # password: ubuntu`}</pre>
+            <p className="mt-1.5">Web app memakai koneksi sendiri (baca key/password langsung) — <strong>tidak perlu ssh-agent</strong>. Ini hanya untuk verifikasi via CLI.</p>
+          </details>
 
           <div className="flex gap-2 pt-1">
             <button onClick={save} disabled={saving} className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-900 text-white text-xs font-bold rounded-lg cursor-pointer">

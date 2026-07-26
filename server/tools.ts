@@ -94,7 +94,7 @@ export async function sshExec(command: string): Promise<{ status: string; stdout
   if (!command) return { status: "error", stdout: "", stderr: "", error: "command kosong" };
 
   const creds: any = {};
-  if (password) creds.password = password;
+  if (password) { creds.password = password; creds.tryKeyboard = true; }
   else if (keyPath) {
     try { creds.privateKey = fs.readFileSync(keyPath); }
     catch (e: any) { return { status: "error", stdout: "", stderr: "", error: `Tidak bisa baca key ${keyPath}: ${e.message}` }; }
