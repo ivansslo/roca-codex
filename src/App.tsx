@@ -206,8 +206,20 @@ export default function App() {
     await streamChat({ messages: history, model: selectedModel, provider: selectedProvider, persona, signal: controller.signal }, {
       onStatus: (msg) => patch({ statusMessage: msg }),
       onChunk: (chunk) => { if (chunk) { accText += chunk; patch({ text: accText, isTyping: false }); } },
-      onToolStart: (data) => { if (data?.toolArgs) toolStartQueue.push(data.toolArgs); },
-      onToolResult: (data) => { if (data) { const args = toolStartQueue.shift() || {}; accLogs.push({ toolName: data.toolName, args, result: data.result }); patch({ logs: [...accLogs] }); } },
+      onToolStart: (data) => {
+        if (data) {
+          toolStartQueue.push({ toolName: data.toolName, args: data.toolArgs || {} });
+          patch({ statusMessage: `Menjalankan tool: ${data.toolName}...` });
+        }
+      },
+      onToolResult: (data) => {
+        if (data) {
+          const idx = toolStartQueue.findIndex(t => t.toolName === data.toolName);
+          const startObj = idx >= 0 ? toolStartQueue.splice(idx, 1)[0] : { toolName: data.toolName, args: {} };
+          accLogs.push({ toolName: data.toolName, args: startObj.args, result: data.result });
+          patch({ logs: [...accLogs] });
+        }
+      },
       onDone: (result) => {
         const finalText = (result?.text && String(result.text).trim()) ? String(result.text) : (accText || '⚠️ Respons kosong.');
         const finalLogs = (Array.isArray(result?.logs) && result.logs.length) ? result.logs : accLogs;

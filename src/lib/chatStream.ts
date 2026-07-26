@@ -59,7 +59,10 @@ export async function streamChat(opts: ChatStreamOptions, handlers: ChatStreamHa
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        if (line.startsWith('event: ')) {
+        if (line.startsWith(':')) {
+          // Keepalive / ping SSE comment line — skip
+          continue;
+        } else if (line.startsWith('event: ')) {
           currentEvent = line.slice(7).trim();
         } else if (line.startsWith('data: ')) {
           const raw = line.slice(6);

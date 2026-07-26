@@ -98,11 +98,37 @@ export const PERSONAS: Record<string, { label: string; icon: string; description
     temperature: 0.9,
     topP: 0.95,
     systemSuffix: "Tone: relaxed and conversational, like a helpful peer."
+  },
+  auto: {
+    label: "Auto Roll",
+    icon: "🎲",
+    description: "Otomatis memilih persona terbaik berdasarkan konteks tugas (coding/kreatif/santai).",
+    temperature: 0.7,
+    topP: 0.95,
+    systemSuffix: "Adaptive tone based on topic context."
   }
 };
 
-export function resolvePersona(personaId?: string) {
-  const id = (personaId && PERSONAS[personaId]) ? personaId : "balanced";
+let autoRollTurnCounter = 0;
+
+export function resolvePersona(personaId?: string, userText?: string) {
+  let targetId = personaId;
+  if (!targetId || targetId === 'auto' || targetId === 'autoroll') {
+    autoRollTurnCounter++;
+    const text = (userText || "").toLowerCase();
+    if (text.match(/(code|bug|error|function|script|install|npm|git|bash|terminal|fix|python|debug|ts|js)/i)) {
+      targetId = 'precision';
+    } else if (text.match(/(idea|creative|write|story|design|suggest|brainstorm|gaya|puisi|desain)/i)) {
+      targetId = 'creative';
+    } else if (text.match(/(halo|hi|bro|gan|apa kabar|cerita|santai|haha|lol)/i)) {
+      targetId = 'casual';
+    } else {
+      const rollOrder = ['balanced', 'precision', 'creative', 'casual'];
+      targetId = rollOrder[autoRollTurnCounter % rollOrder.length];
+    }
+  }
+
+  const id = PERSONAS[targetId] ? targetId : "balanced";
   return { id, ...PERSONAS[id] };
 }
 
@@ -926,15 +952,14 @@ export async function runOrchestrator
   const executionLogs: any[] = [];
   const onProgress = options.onProgress;
 
-  // Resolve persona → real temperature/topP + persona id (read by every provider & buildSystemPrompt).
-  const persona = resolvePersona(options.persona);
-  setActivePersona(persona.id);
-  setGenConfig({ temperature: persona.temperature, topP: persona.topP });
-
-
   // ⚡ OCI Ultra-Speed Fast-Cache & Semantic Lookup (Sub-5ms local speed)
   const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.text || "";
   const lastLower = lastUserMsg.toLowerCase();
+
+  // Resolve persona → real temperature/topP + persona id (read by every provider & buildSystemPrompt).
+  const persona = resolvePersona(options.persona, lastUserMsg);
+  setActivePersona(persona.id);
+  setGenConfig({ temperature: persona.temperature, topP: persona.topP });
 
   // Lean failover chain — only genuinely distinct providers. Removed the 5 "aurora-*" aliases
   // (all identical Gemini wrappers) and jules (creates a GitHub PR, not a chat reply) which only

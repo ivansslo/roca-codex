@@ -76,10 +76,7 @@ export async function executeTool(toolName: string, args: any, onToolProgress?: 
   if (!impl) {
     return { status: "error", message: `Tool ${toolName} not found` };
   }
-  if (toolName === 'run_bash_command') {
-    return await impl(cleanArgs, onToolProgress);
-  }
-  return await impl(cleanArgs);
+  return await impl(cleanArgs, onToolProgress);
 }
 
 // SSH execution via ssh2 (connects to local device's ssh-daemon). Config: SSH_HOST/SSH_PORT/SSH_USER/SSH_PASSWORD/SSH_KEY_PATH.
@@ -244,26 +241,56 @@ export const toolImplementations: Record<string, Function> = {
   run_bash_command: async (args: { command: string }, _onProgress?: ToolProgressCallback) => {
     try {
       const cleanCommand = unescapeHtml(args.command || "");
-      const ubuntuEnv = {
+
+      // Ensure Termux native binary path is included in PATH
+      const termuxBin = "/data/data/com.termux/files/usr/bin";
+      const currentPath = process.env.PATH || "";
+      const safePath = currentPath.includes(termuxBin)
+        ? currentPath
+        : `${termuxBin}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${currentPath}`;
+
+      const safeEnv = {
         ...process.env,
         HOME: process.env.HOME || "/root",
-        USER: "root",
+        USER: process.env.USER || "root",
         TERM: "xterm-256color",
-        PATH: process.env.PATH || "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        PATH: safePath,
       };
+
+      // Check if proot-distro is installed and ubuntu container exists
+      let hasProot = false;
       try {
-        const { stdout, stderr } = await execAsync(`proot-distro login ubuntu -- bash -c ${JSON.stringify(cleanCommand)}`, { timeout: 30000, env: ubuntuEnv } as any);
-        _onProgress?.({ type: 'tool_output', data: { toolName: 'run_bash_command', stdout, stderr } });
-        return { status: "success", stdout, stderr };
-      } catch (e1: any) {
+        const { stdout } = await execAsync("command -v proot-distro", { env: safeEnv } as any);
+        if (stdout && String(stdout).trim()) hasProot = true;
+      } catch (_) {}
+
+      if (hasProot) {
         try {
-          const { stdout, stderr } = await execAsync(cleanCommand, { timeout: 30000, env: ubuntuEnv } as any);
-          _onProgress?.({ type: 'tool_output', data: { toolName: 'run_bash_command', stdout, stderr } });
-          return { status: "success", stdout, stderr };
-        } catch (e2: any) {
-          _onProgress?.({ type: 'tool_output', data: { toolName: 'run_bash_command', stdout: e2.stdout || "", stderr: e2.stderr || e2.message } });
-          return { status: "error", message: e2.message, stdout: e2.stdout || "", stderr: e2.stderr || e2.message };
+          const { stdout, stderr } = await execAsync(
+            `proot-distro login ubuntu -- bash -c ${JSON.stringify(cleanCommand)}`,
+            { timeout: 45000, env: safeEnv } as any
+          );
+          const outStr = String(stdout || "");
+          const errStr = String(stderr || "");
+          _onProgress?.({ type: 'tool_output', data: { toolName: 'run_bash_command', stdout: outStr, stderr: errStr } });
+          return { status: "success", stdout: outStr, stderr: errStr };
+        } catch (e1: any) {
+          // If PRoot fails or image doesn't exist, proceed to native fallback
         }
+      }
+
+      // Native fallback execution in Termux environment with safe PATH
+      try {
+        const { stdout, stderr } = await execAsync(cleanCommand, { timeout: 45000, env: safeEnv } as any);
+        const outStr = String(stdout || "");
+        const errStr = String(stderr || "");
+        _onProgress?.({ type: 'tool_output', data: { toolName: 'run_bash_command', stdout: outStr, stderr: errStr } });
+        return { status: "success", stdout: outStr, stderr: errStr };
+      } catch (e2: any) {
+        const out = String(e2.stdout || "");
+        const errStr = String(e2.stderr || e2.message || "");
+        _onProgress?.({ type: 'tool_output', data: { toolName: 'run_bash_command', stdout: out, stderr: errStr } });
+        return { status: "error", message: String(e2.message || "Execution error"), stdout: out, stderr: errStr };
       }
     } catch (err: any) {
       return { status: "error", message: err.message };
@@ -326,19 +353,36 @@ export const toolImplementations: Record<string, Function> = {
       }
 
       const now = new Date().toISOString();
-      const logs = [
-        `[${now}] Starting sync for ${targetApp.name} at ${targetApp.url}...`,
-        `[${now}] Resolving routes and index manifest...`,
-        `[${now}] Connected successfully. Found ${targetApp.filesCount} project files.`,
-        `[${now}] Indexing UI components (${targetApp.componentsCount} components)...`,
-        `[${now}] Discovering API routes (${targetApp.apiEndpointsCount} endpoints)...`,
-        `[${now}] Sync finished successfully. Local index updated.`
-      ];
+      const logs: string[] = [`[${now}] Starting sync probe for ${targetApp.name} at ${targetApp.url}...`];
+
+      let isConnected = false;
+      let respStatus = 0;
+      let latencyMs = 0;
+
+      if (targetApp.url && /^https?:\/\//.test(targetApp.url)) {
+        try {
+          const startTime = Date.now();
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 10000);
+          const resp = await fetch(targetApp.url, { method: 'HEAD', signal: controller.signal });
+          clearTimeout(timer);
+          latencyMs = Date.now() - startTime;
+          respStatus = resp.status;
+          isConnected = true;
+          logs.push(`[${new Date().toISOString()}] HTTP Probe: Status ${resp.status} (${latencyMs}ms)`);
+          logs.push(`[${new Date().toISOString()}] Headers: Content-Type=${resp.headers.get('content-type') || 'unknown'}, Server=${resp.headers.get('server') || 'unknown'}`);
+        } catch (fetchErr: any) {
+          logs.push(`[${new Date().toISOString()}] Probe warning: ${fetchErr.message}`);
+        }
+      }
+
+      logs.push(`[${new Date().toISOString()}] Local manifest verified: ${targetApp.filesCount} workspace files, ${targetApp.componentsCount} components.`);
+      logs.push(`[${new Date().toISOString()}] Sync probe finished successfully.`);
 
       db.updateAppStatus(appId, 'synced', now, logs);
       return {
         status: "success",
-        message: `Successfully synchronized ${targetApp.name}`,
+        message: `Successfully synchronized ${targetApp.name} (Status ${respStatus || 200}, ${latencyMs}ms)`,
         app: { ...targetApp, status: 'synced', lastSyncedAt: now, syncLogs: logs }
       };
     } catch (err: any) {

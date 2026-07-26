@@ -9,13 +9,14 @@ export interface PersonaMeta {
 }
 
 export const PERSONAS: PersonaMeta[] = [
+  { id: 'auto', label: 'Auto Roll', icon: '🎲', description: 'Otomatis pilih persona terbaik (coding/kreatif/santai).' },
   { id: 'balanced', label: 'Seimbang', icon: '⚖️', description: 'Jelas, akurat, to-the-point.' },
   { id: 'creative', label: 'Kreatif', icon: '🎨', description: 'Eksploratif & bervariasi.' },
   { id: 'precision', label: 'Presisi', icon: '🎯', description: 'Faktual & ringkas, untuk coding.' },
   { id: 'casual', label: 'Santai', icon: '😎', description: 'Rileks & ramah, gaya ngobrol.' }
 ];
 
-export const DEFAULT_PERSONA = 'balanced';
+export const DEFAULT_PERSONA = 'auto';
 
 export function getPersona(id: string | undefined): PersonaMeta {
   return PERSONAS.find(p => p.id === id) || PERSONAS[0];

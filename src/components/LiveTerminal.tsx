@@ -29,34 +29,40 @@ export function LiveTerminal({ isLoading, logs = [] }: LiveTerminalProps) {
     setLines(prev => [...prev, { id: lineIdRef.current++, text, type, timestamp: ts }]);
   };
 
-  // Populate terminal dari logs prop — fallback jika SSE tidak tersedia
-  // Skip jika SSE sudah terhubung (data real-time dari SSE lebih baik)
+  // Populate terminal dari logs prop — fallback jika SSE tidak aktif
   useEffect(() => {
-    if (!logs || logs.length === 0) return;
+    if (!logs || logs.length === 0) {
+      if (!isLoading) {
+        processedCountRef.current = 0;
+      }
+      return;
+    }
+
     // Jika SSE sudah connected, biarkan SSE handle real-time — tidak perlu duplikasi dari logs
     if (connected) return;
 
-    // Proses hanya log entries yang belum ditampilkan
+    // Proses log entries baru
     const newLogs = logs.slice(processedCountRef.current);
     if (newLogs.length === 0) return;
 
     processedCountRef.current = logs.length;
 
     newLogs.forEach((log) => {
-      const cmd = log.args?.command || log.args?.cmd || '';
+      const cmd = log.args?.command || log.args?.cmd || log.args?.filename || '';
       setActiveTool(log.toolName);
-      addLine(`▶ Running ${log.toolName}${cmd ? `: $ ${cmd}` : ''}...`, 'info');
+      addLine(`▶ Executing ${log.toolName}${cmd ? `: ${cmd}` : ''}`, 'info');
 
       if (log.result) {
-        // Tampilkan stdout jika ada
         if (log.result.stdout) {
-          const outLines = log.result.stdout.trim().split('\n');
+          const outLines = String(log.result.stdout).trim().split('\n');
           outLines.forEach((line: string) => addLine(line, 'stdout'));
         }
-        // Tampilkan stderr jika ada
         if (log.result.stderr) {
-          const errLines = log.result.stderr.trim().split('\n');
+          const errLines = String(log.result.stderr).trim().split('\n');
           errLines.forEach((line: string) => addLine(line, 'stderr'));
+        }
+        if (log.result.message && !log.result.stdout && !log.result.stderr) {
+          addLine(log.result.message, log.result.status === 'error' ? 'stderr' : 'stdout');
         }
         const status = log.result.status === 'error' ? '❌' : '✅';
         const exitCode = log.result.exitCode;
@@ -69,7 +75,7 @@ export function LiveTerminal({ isLoading, logs = [] }: LiveTerminalProps) {
     if (!isLoading && processedCountRef.current === logs.length) {
       addLine(`📊 Execution complete — ${logs.length} tool(s) executed`, 'success');
     }
-  }, [logs, isLoading]);
+  }, [logs, isLoading, connected]);
 
   // Connect ke SSE /api/terminal-stream untuk real-time output jika tersedia
   useEffect(() => {
@@ -82,24 +88,27 @@ export function LiveTerminal({ isLoading, logs = [] }: LiveTerminalProps) {
         setConnected(true);
       };
 
-      // Handle real-time tool events from SSE
+      es.onerror = () => {
+        setConnected(false);
+      };
+
       es.addEventListener('tool_start', (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data);
-          const cmd = data.toolArgs?.command || data.toolArgs?.cmd || '';
           setActiveTool(data.toolName);
-          addLine(`▶ Running ${data.toolName}${cmd ? ': $ ' + cmd : ''}...`, 'info');
+          const cmd = data.toolArgs?.command || data.toolArgs?.cmd || data.toolArgs?.filename || '';
+          addLine(`▶ [LIVE] ${data.toolName}${cmd ? `: $ ${cmd}` : ''}`, 'status');
         } catch (_) {}
       });
 
       es.addEventListener('tool_output', (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data);
-          if (data.stdout && String(data.stdout).trim()) {
-            String(data.stdout).trim().split('\n').forEach((line: string) => addLine(line, 'stdout'));
+          if (data.stdout) {
+            String(data.stdout).trim().split('\n').forEach((l: string) => addLine(l, 'stdout'));
           }
-          if (data.stderr && String(data.stderr).trim()) {
-            String(data.stderr).trim().split('\n').forEach((line: string) => addLine(line, 'stderr'));
+          if (data.stderr) {
+            String(data.stderr).trim().split('\n').forEach((l: string) => addLine(l, 'stderr'));
           }
         } catch (_) {}
       });
@@ -107,20 +116,11 @@ export function LiveTerminal({ isLoading, logs = [] }: LiveTerminalProps) {
       es.addEventListener('tool_result', (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data);
-          const r = data.result || {};
-          const ok = r.status === 'success' || !r.error;
-          const exitCode = r.exitCode !== undefined ? ` (exit ${r.exitCode})` : '';
-          addLine(`${ok ? '✅' : '❌'} ${data.toolName} finished${exitCode}`, ok ? 'success' : 'error');
           setActiveTool(null);
         } catch (_) {}
       });
 
-      es.onerror = () => {
-        setConnected(false);
-      };
     } catch (_) {
-      // SSE tidak support di environment ini (Termux WebView dll) — tidak masalah
-      // logs prop sudah cukup sebagai fallback
       setConnected(false);
     }
 
@@ -160,14 +160,14 @@ export function LiveTerminal({ isLoading, logs = [] }: LiveTerminalProps) {
         <div className="flex items-center gap-2">
           <Terminal size={14} className="text-emerald-400" />
           <span className="text-neutral-200 font-semibold uppercase tracking-wider text-[10px] hidden sm:inline">
-            Terminal
+            Terminal Logs
           </span>
           <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold border ${
             connected
               ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-              : 'bg-red-500/10 text-red-400 border-red-500/20'
+              : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
           }`}>
-            {minimized ? 'MIN' : connected ? 'LIVE' : 'OFFLINE'}
+            {minimized ? 'MIN' : connected ? 'LIVE (SSE)' : 'LOCAL'}
           </span>
           {activeTool && (
             <span className="px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[9px] font-bold animate-pulse">
