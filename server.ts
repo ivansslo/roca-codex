@@ -79,24 +79,21 @@ async function startServer() {
     res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
-    if (typeof res.flushHeaders === 'function') res.flushHeaders();
+    if (typeof res.flushHeaders === "function") res.flushHeaders();
 
     try {
       const { messages, model, provider, persona } = req.body;
       if (!messages || !Array.isArray(messages)) {
         res.write(`event: error\ndata: ${JSON.stringify({ error: "Invalid messages array" })}\n\n`);
-        if ((res as any).flush) (res as any).flush();
         return res.end();
       }
 
       res.write(`event: status\ndata: ${JSON.stringify({ message: "Initializing Orchestrator..." })}\n\n`);
-      if ((res as any).flush) (res as any).flush();
 
       const result = await runOrchestrator(messages, {
         model, provider, persona,
         onProgress: (evt) => {
           res.write(`event: ${evt.type}\ndata: ${JSON.stringify(evt.data)}\n\n`);
-          if ((res as any).flush) (res as any).flush();
           if (evt.type === 'tool_output' || evt.type === 'tool_start' || evt.type === 'tool_result') {
             broadcastToTerminal(evt.type, evt.data);
           }
@@ -104,12 +101,10 @@ async function startServer() {
       });
 
       res.write(`event: done\ndata: ${JSON.stringify(result)}\n\n`);
-      if ((res as any).flush) (res as any).flush();
       res.end();
     } catch (error: any) {
       console.error("Stream Orchestrator Error:", error);
       res.write(`event: error\ndata: ${JSON.stringify({ error: error.message || "Streaming failed" })}\n\n`);
-      if ((res as any).flush) (res as any).flush();
       res.end();
     }
   });
@@ -121,14 +116,12 @@ async function startServer() {
     res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
-    if (typeof res.flushHeaders === 'function') res.flushHeaders();
-
+    if (typeof res.flushHeaders === "function") res.flushHeaders();
     terminalClients.add(res);
 
-    // Keep-alive ping every 10 seconds to keep SSE connection open on Android/Termux mobile browser
     const pinger = setInterval(() => {
       try {
-        res.write(`: ping\n\n`);
+        res.write(": ping\n\n");
         if ((res as any).flush) (res as any).flush();
       } catch (_) {}
     }, 10000);
@@ -144,7 +137,7 @@ async function startServer() {
     for (const client of terminalClients) {
       try {
         client.write(payload);
-        if (typeof client.flush === 'function') client.flush();
+        if (typeof client.flush === "function") client.flush();
       } catch (_) {}
     }
   }
@@ -254,19 +247,206 @@ async function startServer() {
       if (!targetPath) return res.status(400).json({ error: "Path parameter required" });
       const fullPath = path.resolve(process.cwd(), targetPath);
       if (!fullPath.startsWith(process.cwd())) return res.status(400).json({ error: "Path outside workspace" });
-      if (!fs.existsSync(fullPath)) return res.status(404).json({ error: "Item not found" });
-      const stats = fs.statSync(fullPath);
-      if (stats.isDirectory()) {
-        fs.rmSync(fullPath, { recursive: true, force: true });
-      } else {
-        fs.unlinkSync(fullPath);
-      }
-      res.json({ success: true });
+      if (!fs.existsSync(fullPath)) return res.status(404).json({ error: "Path not found" });
+      if (fs.statSync(fullPath).isDirectory()) fs.rmSync(fullPath, { recursive: true, force: true });
+      else fs.unlinkSync(fullPath);
+      res.json({ status: "success", message: `Deleted ${targetPath}` });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
-  // ---- Env config ----
-  app.get("/api/env-check", (req, res) => {
+  // ---- Chat sessions ----
+  app.get("/api/chat-sessions", (req, res) => {
+    try { res.json(db.getChatSessions()); } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post("/api/chat-sessions", (req, res) => {
+    try {
+      const { session } = req.body;
+      if (!session || !session.id) return res.status(400).json({ error: "Invalid session object" });
+      db.saveChatSession(session);
+      const sessionDirPath = path.join(process.cwd(), "sessions", session.id);
+      if (!fs.existsSync(sessionDirPath)) {
+        fs.mkdirSync(sessionDirPath, { recursive: true });
+        fs.writeFileSync(path.join(sessionDirPath, "README.md"),
+          `# Project Workspace for ${session.title}\n\nCreated: ${session.createdAt || new Date().toISOString()}\nSession ID: ${session.id}\n`);
+      }
+      res.json({ status: "success", session, sessionDirPath });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.put("/api/chat-sessions/:id/rename", (req, res) => {
+    try {
+      const { title } = req.body;
+      if (!title) return res.status(400).json({ error: "Title parameter required" });
+      db.renameChatSession(req.params.id, title);
+      res.json({ status: "success", message: `Renamed session ${req.params.id}` });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.delete("/api/chat-sessions/:id", (req, res) => {
+    try {
+      db.deleteChatSession(req.params.id);
+      res.json({ status: "success", message: `Session ${req.params.id} deleted` });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ---- Memories ----
+  app.get("/api/memories", (req, res) => {
+    try { res.json(db.getMemories()); } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+  app.post("/api/memories", (req, res) => {
+    try {
+      const { key, value, category } = req.body;
+      if (!key || !value) return res.status(400).json({ error: "Key and value required" });
+      db.saveMemory(key, value, category || 'general');
+      res.json({ status: "success", message: "Memory saved" });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+  app.delete("/api/memories/:key", (req, res) => {
+    try { db.deleteMemory(req.params.key); res.json({ status: "success", message: `Deleted memory ${req.params.key}` }); }
+    catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ---- Self capabilities ----
+  app.get("/api/self-capabilities", (req, res) => {
+    try { res.json(db.getSelfCapabilities()); } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+  app.post("/api/self-capabilities", (req, res) => {
+    try {
+      const { name, codeSnippet, purpose, category } = req.body;
+      if (!name || !codeSnippet) return res.status(400).json({ error: "Name and codeSnippet required" });
+      const id = db.saveSelfCapability(name, codeSnippet, purpose || '', category || 'general');
+      res.json({ status: "success", id });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+  app.patch("/api/self-capabilities/:id/pin", (req, res) => {
+    try { res.json({ id: req.params.id, isPinned: db.togglePinSelfCapability(req.params.id) }); }
+    catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+  app.patch("/api/self-capabilities/:id/dependencies", (req, res) => {
+    try {
+      const { dependencies } = req.body;
+      db.updateSelfCapabilityDependencies(req.params.id, dependencies || []);
+      res.json({ status: "success" });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ---- Web search & logs ----
+  app.post("/api/web-search", async (req, res) => {
+    try {
+      const { query, depth, category } = req.body;
+      if (!query) return res.status(400).json({ error: "Query is required" });
+      const searchRes = await toolImplementations.web_searching_module({ query, depth, category });
+      res.json(searchRes);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.get("/api/capability-logs/:name", (req, res) => {
+    try {
+      const nameDecoded = decodeURIComponent(req.params.name);
+      const logs = db.getLogs().filter(l =>
+        (l.toolName === "self_develop_capability" && (l.args?.name === nameDecoded || l.args?.name === req.params.name)) ||
+        (l.args?.capabilityName === nameDecoded || l.args?.capabilityName === req.params.name)
+      );
+      res.json(logs);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.get("/api/routines/:name/history", (req, res) => {
+    try {
+      const nameDecoded = decodeURIComponent(req.params.name);
+      const logs = db.getLogs().filter(l =>
+        (l.toolName === "self_develop_capability" && (l.args?.name === nameDecoded || l.args?.name === req.params.name)) ||
+        (l.args?.capabilityName === nameDecoded || l.args?.capabilityName === req.params.name)
+      );
+      res.json(logs);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post("/api/upload", (req, res) => {
+    try {
+      const { filename, content } = req.body;
+      if (!filename || content === undefined) return res.status(400).json({ error: "Filename and content required" });
+      const fullPath = path.resolve(process.cwd(), filename);
+      if (!fullPath.startsWith(process.cwd())) return res.status(400).json({ error: "Path outside workspace" });
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      fs.writeFileSync(fullPath, content);
+      res.json({ status: "success", path: filename });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ---- Files ----
+  app.get("/api/files", (req, res) => {
+    try {
+      const files = fs.readdirSync(process.cwd()).filter(f => !['node_modules', '.git', 'dist'].includes(f));
+      res.json(files);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.get("/api/files/content", (req, res) => {
+    try {
+      const filePath = (req.query.path as string || "").replace(/\.\./g, "");
+      if (!filePath) return res.status(400).send("Path parameter required");
+      const fullPath = path.resolve(process.cwd(), filePath);
+      if (!fullPath.startsWith(process.cwd())) return res.status(400).send("Path outside workspace");
+      if (!fs.existsSync(fullPath)) return res.status(404).send("File not found");
+      const content = fs.readFileSync(fullPath, "utf-8");
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.send(content);
+    } catch (err: any) { res.status(500).send(err.message); }
+  });
+
+  // ---- Synced apps ----
+  app.get("/api/synced-apps", (req, res) => {
+    try { res.json(db.getSyncedApps()); } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+  app.post("/api/synced-apps/:id/sync", async (req, res) => {
+    try {
+      const { id } = req.params;
+      db.updateAppStatus(id, 'synced', new Date().toISOString(), [
+        `[${new Date().toISOString()}] Synced with workspace...`,
+        `[${new Date().toISOString()}] Index updated.`
+      ]);
+      res.json({ status: "success", message: `App ${id} synced` });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ---- .env management (used by EnvEditor + AiProviderValidator) ----
+  app.get("/api/env/config", (req, res) => {
+    try {
+      const envPath = path.join(process.cwd(), ".env");
+      const rawEnv = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf-8") : "";
+      const envVars: { key: string; value: string }[] = [];
+      for (const line of rawEnv.split("\n")) {
+        const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
+        if (m) envVars.push({ key: m[1], value: m[2].replace(/^["']|["']$/g, "") });
+      }
+      res.json({ rawEnv, envVars });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post("/api/env/update", (req, res) => {
+    try {
+      const { envs } = req.body;
+      if (!Array.isArray(envs)) return res.status(400).json({ error: "envs array required" });
+      const envPath = path.join(process.cwd(), ".env");
+      let lines = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf-8").split("\n") : [];
+      for (const item of envs) {
+        const key = String(item?.key || "");
+        if (!/^[A-Z0-9_]+$/.test(key)) continue;
+        const v = String(item?.value ?? "");
+        process.env[key] = v;
+        const idx = lines.findIndex(l => new RegExp(`^\\s*${key}\\s*=`).test(l));
+        if (idx >= 0) lines[idx] = `${key}=${v}`;
+        else lines.push(`${key}=${v}`);
+      }
+      fs.writeFileSync(envPath, lines.join("\n").replace(/\n{3,}/g, "\n\n") + "\n", "utf-8");
+      try { dotenv.config({ override: true }); } catch {}
+      res.json({ success: true, message: ".env diperbarui & dimuat ulang" });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.get("/api/env/status", (req, res) => {
     const checks = [
       { name: "Gemini", keys: ["GEMINI_API_KEY", "GEMINI_KEY", "GOOGLE_API_KEY"] },
       { name: "Groq", keys: ["GROQ_KEY", "GROQ_API_KEY"] },
@@ -362,6 +542,7 @@ async function startServer() {
   });
 
   // ---- GitHub ----
+  // Resolve "owner/repo" from the actual git remote (origin), with GITHUB_REPO override.
   async function resolveGitHubRepo(execAsync: any): Promise<string> {
     const envOverride = (process.env.GITHUB_REPO || "").trim();
     if (envOverride.includes("/")) return envOverride;
