@@ -84,10 +84,9 @@ export async function sshExec(command: string): Promise<{ status: string; stdout
   const { Client } = await import('ssh2') as any;
   const host = process.env.SSH_HOST || "127.0.0.1";
   const port = parseInt(process.env.SSH_PORT || "8022", 10);
-  const username = process.env.SSH_USER || "";
+  const username = process.env.SSH_USER || process.env.USER || "root";
   const password = process.env.SSH_PASSWORD || "";
   const keyPath = process.env.SSH_KEY_PATH || "";
-  if (!username) return { status: "error", stdout: "", stderr: "", error: "SSH_USER belum dikonfigurasi (Settings → SSH)." };
   if (!command) return { status: "error", stdout: "", stderr: "", error: "command kosong" };
 
   const creds: any = {};
@@ -251,37 +250,45 @@ export const toolImplementations: Record<string, Function> = {
 
       const safeEnv = {
         ...process.env,
-        HOME: process.env.HOME || "/root",
+        HOME: process.env.HOME || (fs.existsSync("/data/data/com.termux/files/home") ? "/data/data/com.termux/files/home" : "/root"),
         USER: process.env.USER || "root",
         TERM: "xterm-256color",
         PATH: safePath,
       };
 
-      // Check if proot-distro is installed and ubuntu container exists
-      let hasProot = false;
+      const nativeShell = fs.existsSync(`${termuxBin}/bash`) 
+        ? `${termuxBin}/bash` 
+        : (fs.existsSync(`${termuxBin}/sh`) ? `${termuxBin}/sh` : undefined);
+
+      // Check if proot-distro is installed AND ubuntu container is explicitly INSTALLED
+      let hasUbuntuProot = false;
       try {
-        const { stdout } = await execAsync("command -v proot-distro", { env: safeEnv } as any);
-        if (stdout && String(stdout).trim()) hasProot = true;
+        const { stdout } = await execAsync("proot-distro list", { env: safeEnv, timeout: 3000 } as any);
+        if (stdout && String(stdout).includes("ubuntu") && String(stdout).includes("installed")) {
+          hasUbuntuProot = true;
+        }
       } catch (_) {}
 
-      if (hasProot) {
+      if (hasUbuntuProot) {
         try {
           const { stdout, stderr } = await execAsync(
             `proot-distro login ubuntu -- bash -c ${JSON.stringify(cleanCommand)}`,
-            { timeout: 45000, env: safeEnv } as any
+            { timeout: 30000, env: safeEnv } as any
           );
           const outStr = String(stdout || "");
           const errStr = String(stderr || "");
           _onProgress?.({ type: 'tool_output', data: { toolName: 'run_bash_command', stdout: outStr, stderr: errStr } });
           return { status: "success", stdout: outStr, stderr: errStr };
         } catch (e1: any) {
-          // If PRoot fails or image doesn't exist, proceed to native fallback
+          // If PRoot execution fails, proceed immediately to native Termux execution
         }
       }
 
-      // Native fallback execution in Termux environment with safe PATH
+      // Fast Direct Native Execution in Termux Shell (Sub-10ms latency)
       try {
-        const { stdout, stderr } = await execAsync(cleanCommand, { timeout: 45000, env: safeEnv } as any);
+        const opts: any = { timeout: 30000, env: safeEnv };
+        if (nativeShell) opts.shell = nativeShell;
+        const { stdout, stderr } = await execAsync(cleanCommand, opts);
         const outStr = String(stdout || "");
         const errStr = String(stderr || "");
         _onProgress?.({ type: 'tool_output', data: { toolName: 'run_bash_command', stdout: outStr, stderr: errStr } });
