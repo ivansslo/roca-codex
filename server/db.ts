@@ -318,6 +318,17 @@ const DEFAULT_SCHEMA: DatabaseSchema = {
         },
         required: ["command"]
       }
+    },
+    {
+      name: "export_app_archive",
+      description: "Convert app documentation markdown (roc-webui.md or roc-otoweb.md) into a downloadable .zip archive for the ecosystem apps (github.com/ivansslo/roc-webui or github.com/ivansslo/roc-otoweb).",
+      parameters: {
+        type: "object",
+        properties: {
+          appId: { type: "string", description: "App ID: 'roc-webui' or 'roc-otoweb'." }
+        },
+        required: ["appId"]
+      }
     }
   ],
   logs: [],
@@ -326,24 +337,24 @@ const DEFAULT_SCHEMA: DatabaseSchema = {
       id: "roc-webui",
       name: "ROC Web UI",
       status: "unsynced",
-      url: "http://localhost:8080",
+      url: "https://github.com/ivansslo/roc-webui",
       componentsCount: 18,
       filesCount: 42,
       apiEndpointsCount: 9,
-      description: "The main web-based dashboard and control interface for managing the robotic fleet telemetry and operations.",
+      description: "Primary web UI control panel and telemetry dashboard. Source: github.com/ivansslo/roc-webui (roc-webui.md -> roc-webui.zip).",
       syncLogs: []
     },
     {
       id: "roc-otoweb",
       name: "ROC Oto Web",
       status: "unsynced",
-      url: "http://localhost:8090",
+      url: "https://github.com/ivansslo/roc-otoweb",
       componentsCount: 12,
       filesCount: 29,
       apiEndpointsCount: 6,
-      description: "An autonomous fleet operations hub specializing in routing, spatial maps, and turn-by-turn navigation data syncing.",
+      description: "Autonomous fleet operations and spatial mapping hub. Source: github.com/ivansslo/roc-otoweb (roc-otoweb.md -> roc-otoweb.zip).",
       syncLogs: []
-    },
+    }
   ],
   chatSessions: [],
   memories: [],

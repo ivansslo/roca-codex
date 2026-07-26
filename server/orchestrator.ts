@@ -139,9 +139,30 @@ let ACTIVE_PERSONA_ID: string = "balanced";
 function setGenConfig(g: GenConfig) { ACTIVE_GEN_CONFIG = { temperature: g.temperature, topP: g.topP, topK: g.topK }; }
 function setActivePersona(id: string) { ACTIVE_PERSONA_ID = PERSONAS[id] ? id : "balanced"; }
 
+import os from "os";
+
+function getServerEnvironmentContext(): string {
+  const isTermux = fs.existsSync('/data/data/com.termux') || !!process.env.TERMUX_VERSION;
+  const platform = os.platform();
+  const arch = os.arch();
+  const release = os.release();
+  const hostname = os.hostname();
+  const nodeVersion = process.version;
+  const cwd = process.cwd();
+  const envType = isTermux ? "Termux (Android)" : `${platform} ${arch} (${release})`;
+
+  return `## Server Environment Awareness\n` +
+    `- Host OS/Environment: **${envType}** (Hostname: \`${hostname}\`)\n` +
+    `- Node.js Version: \`${nodeVersion}\` | Working Directory: \`${cwd}\`\n` +
+    `- Primary Source Repositories: **ivansslo/roca-codex** and **ivansslo/rocagents**\n` +
+    `- Ecosystem Synced Apps: **roc-webui** (https://github.com/ivansslo/roc-webui) & **roc-otoweb** (https://github.com/ivansslo/roc-otoweb)\n` +
+    `- Self Awareness: You are installed directly in this live server environment. You know your own source codebase, path, tools, and running process.`;
+}
+
 function buildSystemPrompt(personaId: string | undefined, extraContext?: string, recentMessages?: any[], activeFile?: string): string {
   const persona = resolvePersona(personaId);
-  let prompt = `${OWNER_SYSTEM_PROMPT_BASE}\n\n## Style (${persona.label})\n- ${persona.systemSuffix}\n- Never repeat the exact same phrasing every turn; adapt to the question.`;
+  const envContext = getServerEnvironmentContext();
+  let prompt = `${OWNER_SYSTEM_PROMPT_BASE}\n\n${envContext}\n\n## Style (${persona.label})\n- ${persona.systemSuffix}\n- Never repeat the exact same phrasing every turn; adapt to the question.`;
 
   if (recentMessages && recentMessages.length > 0) {
     const lastThree = recentMessages.slice(-3);

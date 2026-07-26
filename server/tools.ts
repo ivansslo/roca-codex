@@ -343,6 +343,44 @@ export const toolImplementations: Record<string, Function> = {
     }
   },
 
+  export_app_archive: async (args: { appId: string }) => {
+    try {
+      const appId = (args.appId || "").toLowerCase();
+      if (appId !== 'roc-webui' && appId !== 'roc-otoweb') {
+        return { status: "error", message: "appId must be 'roc-webui' or 'roc-otoweb'" };
+      }
+      const mdFilename = `${appId}.md`;
+      const zipFilename = `${appId}.zip`;
+      const mdPath = path.join(process.cwd(), mdFilename);
+      const zipPath = path.join(process.cwd(), zipFilename);
+
+      if (!fs.existsSync(mdPath)) {
+        const repoUrl = `https://github.com/ivansslo/${appId}`;
+        const title = appId === 'roc-webui' ? 'ROC Web UI' : 'ROC Oto Web';
+        const mdContent = `# 🚀 ${title} (\`${appId}\`)\n\nSource Repository: [${repoUrl}](${repoUrl})\n\n## Overview\nDocumentation manifest for ${title}.\n`;
+        fs.writeFileSync(mdPath, mdContent, 'utf-8');
+      }
+
+      const { exec } = await import('child_process');
+      const util = await import('util');
+      const execAsync = util.promisify(exec);
+
+      await execAsync(`zip -j -q "${zipPath}" "${mdPath}"`);
+
+      const zipStats = fs.statSync(zipPath);
+      return {
+        status: "success",
+        appId,
+        mdFile: mdFilename,
+        zipFile: zipFilename,
+        zipSizeBytes: zipStats.size,
+        message: `Successfully packaged ${mdFilename} into ${zipFilename} (${zipStats.size} bytes).`
+      };
+    } catch (err: any) {
+      return { status: "error", message: err.message };
+    }
+  },
+
   sync_external_app: async (args: { appId: string }) => {
     try {
       const { appId } = args;
@@ -372,7 +410,15 @@ export const toolImplementations: Record<string, Function> = {
           logs.push(`[${new Date().toISOString()}] HTTP Probe: Status ${resp.status} (${latencyMs}ms)`);
           logs.push(`[${new Date().toISOString()}] Headers: Content-Type=${resp.headers.get('content-type') || 'unknown'}, Server=${resp.headers.get('server') || 'unknown'}`);
         } catch (fetchErr: any) {
-          logs.push(`[${new Date().toISOString()}] Probe warning: ${fetchErr.message}`);
+          logs.push(`[${new Date().toISOString()}] GitHub Probe: ${fetchErr.message}`);
+        }
+      }
+
+      // Convert .md to .zip automatically during app sync
+      if (appId === 'roc-webui' || appId === 'roc-otoweb') {
+        const archiveRes = await toolImplementations.export_app_archive({ appId });
+        if (archiveRes.status === 'success') {
+          logs.push(`[${new Date().toISOString()}] Packaged ${archiveRes.mdFile} -> ${archiveRes.zipFile} (${archiveRes.zipSizeBytes} bytes)`);
         }
       }
 
