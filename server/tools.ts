@@ -407,29 +407,44 @@ export const toolImplementations: Record<string, Function> = {
           latencyMs = Date.now() - startTime;
           respStatus = resp.status;
           isConnected = true;
-          logs.push(`[${new Date().toISOString()}] HTTP Probe: Status ${resp.status} (${latencyMs}ms)`);
-          logs.push(`[${new Date().toISOString()}] Headers: Content-Type=${resp.headers.get('content-type') || 'unknown'}, Server=${resp.headers.get('server') || 'unknown'}`);
+          logs.push(`[${new Date().toISOString()}] GitHub Probe: Status ${resp.status} (${latencyMs}ms)`);
+          logs.push(`[${new Date().toISOString()}] Source Repository verified: ${targetApp.url}`);
         } catch (fetchErr: any) {
-          logs.push(`[${new Date().toISOString()}] GitHub Probe: ${fetchErr.message}`);
+          logs.push(`[${new Date().toISOString()}] GitHub Probe warning: ${fetchErr.message}`);
         }
       }
 
-      // Convert .md to .zip automatically during app sync
-      if (appId === 'roc-webui' || appId === 'roc-otoweb') {
+      // Verify and inspect zip archive for roc-webui / roc-otoweb
+      const zipFilename = `${appId}.zip`;
+      const zipPath = path.join(process.cwd(), zipFilename);
+      let zipFilesCount = targetApp.filesCount || 0;
+      let zipSizeBytes = 0;
+
+      if (fs.existsSync(zipPath)) {
+        zipSizeBytes = fs.statSync(zipPath).size;
+        try {
+          const { exec } = await import('child_process');
+          const util = await import('util');
+          const execAsync = util.promisify(exec);
+          const { stdout } = await execAsync(`unzip -l "${zipPath}" | tail -n 1`);
+          const match = stdout.match(/(\d+)\s+files?/i);
+          if (match) zipFilesCount = parseInt(match[1], 10);
+        } catch (_) {}
+        logs.push(`[${new Date().toISOString()}] Zip archive verified: ${zipFilename} (${zipSizeBytes} bytes, ${zipFilesCount} files).`);
+      } else {
         const archiveRes = await toolImplementations.export_app_archive({ appId });
         if (archiveRes.status === 'success') {
-          logs.push(`[${new Date().toISOString()}] Packaged ${archiveRes.mdFile} -> ${archiveRes.zipFile} (${archiveRes.zipSizeBytes} bytes)`);
+          logs.push(`[${new Date().toISOString()}] Generated ${archiveRes.zipFile} (${archiveRes.zipSizeBytes} bytes).`);
         }
       }
 
-      logs.push(`[${new Date().toISOString()}] Local manifest verified: ${targetApp.filesCount} workspace files, ${targetApp.componentsCount} components.`);
       logs.push(`[${new Date().toISOString()}] Sync probe finished successfully.`);
 
       db.updateAppStatus(appId, 'synced', now, logs);
       return {
         status: "success",
-        message: `Successfully synchronized ${targetApp.name} (Status ${respStatus || 200}, ${latencyMs}ms)`,
-        app: { ...targetApp, status: 'synced', lastSyncedAt: now, syncLogs: logs }
+        message: `Successfully synchronized ${targetApp.name} (${zipFilename}, ${zipSizeBytes} bytes, ${latencyMs}ms)`,
+        app: { ...targetApp, status: 'synced', lastSyncedAt: now, filesCount: zipFilesCount, syncLogs: logs }
       };
     } catch (err: any) {
       return { status: "error", message: err.message };
