@@ -1,6 +1,8 @@
 import React, { useRef, useState } from 'react';
 import { Paperclip, Send, X, FileText, AlertCircle, Folder, Square, Target } from 'lucide-react';
 import { FilePayload } from '../types';
+import { PersonaSelector } from './PersonaSelector';
+import { ModelQuickSwitch } from './ModelQuickSwitch';
 
 interface ChatInputProps {
   onSend: (text: string, file?: FilePayload) => void;
@@ -8,9 +10,16 @@ interface ChatInputProps {
   retryOnError?: boolean;
   onRetryOnErrorChange?: (value: boolean) => void;
   sendOnEnter?: boolean;
+  persona?: string;
+  onPersonaChange?: (id: string) => void;
+  onStop?: () => void;
+  availableModels?: any[];
+  selectedModel?: string;
+  selectedProvider?: string;
+  onSelectModel?: (model: any) => void;
 }
 
-export function ChatInput({ onSend, disabled, retryOnError, onRetryOnErrorChange, sendOnEnter = true }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, retryOnError, onRetryOnErrorChange, sendOnEnter = true, persona = 'balanced', onPersonaChange, onStop, availableModels = [], selectedModel = '', selectedProvider = '', onSelectModel }: ChatInputProps) {
   const [text, setText] = useState('');
   const [attachedFile, setAttachedFile] = useState<FilePayload | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -172,18 +181,26 @@ export function ChatInput({ onSend, disabled, retryOnError, onRetryOnErrorChange
         />
 
         <div className="flex items-center justify-between pt-1 border-t border-theme-border/60">
-          {/* Left attachment button */}
-          <button 
-            type="button" 
-            onClick={() => fileInputRef.current?.click()} 
-            className="p-2 border border-theme-border bg-theme-btn-hover text-theme-text-secondary hover:text-theme-text-primary rounded-xl transition-all cursor-pointer shadow-xs"
-            title="Attach file context"
-          >
-            <Paperclip size={18} />
-          </button>
+          {/* Left: persona selector + model switch + attachment */}
+          <div className="flex items-center gap-2">
+            {onPersonaChange && (
+              <PersonaSelector value={persona} onChange={onPersonaChange} />
+            )}
+            {onSelectModel && availableModels.length > 0 && (
+              <ModelQuickSwitch availableModels={availableModels} selectedModel={selectedModel} selectedProvider={selectedProvider} onSelectModel={onSelectModel} />
+            )}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2 border border-theme-border bg-theme-btn-hover text-theme-text-secondary hover:text-theme-text-primary rounded-xl transition-all cursor-pointer shadow-xs"
+              title="Attach file context"
+            >
+              <Paperclip size={18} />
+            </button>
+          </div>
           <input type="file" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
 
-          {/* Right Action Controls: Document archive shortcut & Submit / Stop action button matching Image 2 */}
+          {/* Right Action Controls */}
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -194,12 +211,15 @@ export function ChatInput({ onSend, disabled, retryOnError, onRetryOnErrorChange
               <Folder size={18} />
             </button>
 
-            <button 
-              type="button" 
-              onClick={(e) => handleSendMessage(e)} 
-              disabled={(!text.trim() && !attachedFile) || disabled || isProcessing} 
+            <button
+              type="button"
+              onClick={(e) => {
+                if ((disabled || isProcessing) && onStop) { onStop(); return; }
+                handleSendMessage(e);
+              }}
+              disabled={(!text.trim() && !attachedFile) && !(disabled || isProcessing)}
               className="p-2 border border-theme-border bg-theme-btn-active text-theme-text-primary rounded-xl disabled:opacity-40 transition-all cursor-pointer shadow-sm flex items-center justify-center"
-              title="Submit prompt"
+              title={(disabled || isProcessing) ? "Stop generating" : "Submit prompt"}
             >
               {disabled || isProcessing ? (
                 <Square size={16} className="text-amber-400 animate-pulse fill-amber-400" />

@@ -34,14 +34,88 @@ export type OrchestratorProgressEvent = {
 export type OrchestratorOptions = {
   model?: string;
   provider?: string;
+  persona?: string;
   activeFile?: string;
   onProgress?: (event: OrchestratorProgressEvent) => void;
 };
 
-const OWNER_SYSTEM_PROMPT_BASE = "You are the Codex AI Orchestrator. You are a highly advanced, direct, and efficient artificial intelligence assistant integrated into this development workspace. Your purpose is to assist your creator, Ivan Ssl (ivansslo), with precision and speed. YOU HAVE FULL SYSTEM ACCESS to read and modify all files in the repository (frontend, backend, and infrastructure). CRITICAL PROTOCOL: 1. Be concise and professional. 2. Execute tasks immediately using available tools. 3. Respond natively in the user's language (Indonesian/English/etc.). 4. Do NOT mention infrastructure status (Tailscale, OCI, ports) unless specifically asked. 5. Prioritize functional outcomes and clean code. You are designed to solve problems, build features, and manage the system with minimal friction.";
+// How many tool-calling rounds an agent may take to complete a goal. Previously 5 — too low
+// for multi-step goals (read → edit → run → fix → re-run), so the agent stopped mid-task.
+const MAX_TOOL_TURNS = 12;
 
-function buildSystemPrompt(extraContext?: string, recentMessages?: any[], activeFile?: string): string {
-  let prompt = `${OWNER_SYSTEM_PROMPT_BASE}\n\n## Operational Guidelines\n- **Efficiency**: No long-winded explanations. If a task requires code, implement it and explain briefly.\n- **Directness**: Answer questions accurately and directly.\n- **Language**: Fluent Indonesian/English support.\n- **Context Awareness**: You are aware of the entire project structure and the current development state.`;
+// Goal-executing agent prompt: the agent must ACCOMPLISH the user's intent AND never fabricate results.
+const OWNER_SYSTEM_PROMPT_BASE = `You are ROCAgents, a goal-executing engineering agent in a LIVE workspace with REAL tool access (read/write/edit files, search, run shell, web search, memory, http). Tools actually execute and return real results to you.
+
+CRITICAL — NO FABRICATION (zero tolerance):
+- NEVER invent terminal output, commit hashes, file contents, API responses, URLs, or success/failure you did not actually cause.
+- To perform ANY shell action (git, npm, build, etc.) you MUST call the run_bash_command tool. The ONLY output you may show is what a tool call actually returned.
+- If you did not call a tool for an action, you did NOT do it — never claim otherwise. NEVER paste fake "$ command ... output" blocks or invented results.
+- Tool results appear in the tool-logs panel; your answer must match them. If a tool failed or was not called, say so truthfully.
+- If you cannot do something (missing key, permission, not installed, auth needed), say exactly that — do NOT pretend success.
+
+Execution protocol:
+1. Identify the user's true GOAL (the end result), not just the literal words.
+2. ACT with tools — read, search, edit, run_bash_command. Prefer doing over describing.
+3. Multi-step goals: execute in sequence until done (you have many tool turns).
+4. VERIFY with tools (run/test/read-back) before claiming success. Report the OUTCOME grounded in real tool results, never imagined ones.
+5. If a step fails, diagnose with tools and retry a corrected approach.
+6. Be concise and direct; skip infrastructure chatter unless it affects the task.
+
+Respond natively in the user's language (Indonesian/English/etc.).`;
+
+// ---- Persona & generation config (fixes "monotonous / always the same" responses) ----
+export type GenConfig = { temperature?: number; topP?: number; topK?: number };
+
+export const PERSONAS: Record<string, { label: string; icon: string; description: string; temperature: number; topP: number; systemSuffix: string }> = {
+  balanced: {
+    label: "Seimbang",
+    icon: "⚖️",
+    description: "Default — jawaban jelas, akurat, dan to-the-point.",
+    temperature: 0.7,
+    topP: 0.95,
+    systemSuffix: "Default tone: clear and direct. Explain only when it adds value."
+  },
+  creative: {
+    label: "Kreatif",
+    icon: "🎨",
+    description: "Eksploratif & bervariasi — banyak ide, alternatif solusi, nada lebih hidup.",
+    temperature: 1.1,
+    topP: 0.98,
+    systemSuffix: "Tone: exploratory — offer alternatives and varied phrasing while still completing the goal."
+  },
+  precision: {
+    label: "Presisi",
+    icon: "🎯",
+    description: "Faktual & ringkas — deterministik, untuk coding & analisa teknis.",
+    temperature: 0.2,
+    topP: 0.8,
+    systemSuffix: "Tone: exact and terse — minimal words, maximum precision. Ideal for code and debugging."
+  },
+  casual: {
+    label: "Santai",
+    icon: "😎",
+    description: "Rileks & ramah — gaya ngobrol, empati, bahasa sehari-hari.",
+    temperature: 0.9,
+    topP: 0.95,
+    systemSuffix: "Tone: relaxed and conversational, like a helpful peer."
+  }
+};
+
+export function resolvePersona(personaId?: string) {
+  const id = (personaId && PERSONAS[personaId]) ? personaId : "balanced";
+  return { id, ...PERSONAS[id] };
+}
+
+// Module-level active generation config, set per-request by runOrchestrator and read by providers.
+// (Single-user personal orchestrator; reset on every request entry.)
+let ACTIVE_GEN_CONFIG: GenConfig = { temperature: 0.7, topP: 0.95 };
+let ACTIVE_PERSONA_ID: string = "balanced";
+function setGenConfig(g: GenConfig) { ACTIVE_GEN_CONFIG = { temperature: g.temperature, topP: g.topP, topK: g.topK }; }
+function setActivePersona(id: string) { ACTIVE_PERSONA_ID = PERSONAS[id] ? id : "balanced"; }
+
+function buildSystemPrompt(personaId: string | undefined, extraContext?: string, recentMessages?: any[], activeFile?: string): string {
+  const persona = resolvePersona(personaId);
+  let prompt = `${OWNER_SYSTEM_PROMPT_BASE}\n\n## Style (${persona.label})\n- ${persona.systemSuffix}\n- Never repeat the exact same phrasing every turn; adapt to the question.`;
 
   if (recentMessages && recentMessages.length > 0) {
     const lastThree = recentMessages.slice(-3);
@@ -60,69 +134,20 @@ function buildSystemPrompt(extraContext?: string, recentMessages?: any[], active
   return prompt;
 }
 
-// Robust fetch helper with Keep-Alive sockets and cURL fallback - SECURE + FAST (fix reload + secret leak)
+// Lean fetch helper — single fast attempt (8s). The previous cURL fallback added ~20s latency
+// per failed provider, which cascaded across the failover chain and made responses crawl.
 export async function robustFetch(url: string, options: any = {}): Promise<any> {
   options.headers = {
     "Connection": "keep-alive",
-    "Keep-Alive": "timeout=60, max=1000",
     ...options.headers
   };
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90000);
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s max, not 30s to prevent page reload timeout
-    const res = await fetch(url, { ...options, signal: controller.signal });
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
     clearTimeout(timeoutId);
-    if (!res.ok && res.status >= 500) {
-      throw new Error(`HTTP ${res.status} server error from ${url}`);
-    }
-    return res;
-  } catch (err: any) {
-    // Fallback curl with REDACTED secrets to prevent Bearer token leak in logs (fix screenshot logs)
-    const method = options.method || "GET";
-    const headers = options.headers || {};
-
-    let curlHeaders = "";
-    for (const [k, v] of Object.entries(headers)) {
-      if (k.toLowerCase() === "authorization") {
-        curlHeaders += ` -H "${k}: Bearer [REDACTED]"`;
-      } else {
-        curlHeaders += ` -H "${k}: ${v}"`;
-      }
-    }
-
-    try {
-      // Use original body for actual request but don't log it fully
-      const body = options.body || "";
-      let curlCmd = `curl -sS -X ${method} "${url}" --max-time 15 -A "ROCAgents/5.14.0"${curlHeaders}`;
-      if (body) {
-        const escapedBody = typeof body === 'string' ? body.replace(/"/g, '\\"').substring(0, 500) : JSON.stringify(body).replace(/"/g, '\\"').substring(0, 500);
-        curlCmd += ` -d "${escapedBody}"`;
-      }
-      // Execute with original full body (need full body for real request)
-      const fullBody = options.body || "";
-      let fullCurlCmd = `curl -sS -X ${method} "${url}" --max-time 15 -A "ROCAgents/5.14.0"`;
-      for (const [k, v] of Object.entries(headers)) {
-        if (k.toLowerCase() === "authorization") {
-          fullCurlCmd += ` -H "${k}: Bearer ${(v as string).substring(0, 15)}..."`;
-        } else {
-          fullCurlCmd += ` -H "${k}: ${v}"`;
-        }
-      }
-      if (fullBody) {
-        const escapedFull = typeof fullBody === 'string' ? fullBody.replace(/"/g, '\\"') : JSON.stringify(fullBody).replace(/"/g, '\\"');
-        fullCurlCmd += ` -d "${escapedFull}"`;
-      }
-      const { stdout } = await execAsync(fullCurlCmd, { timeout: 20000 });
-      return {
-        ok: true,
-        status: 200,
-        json: async () => JSON.parse(stdout),
-        text: async () => stdout
-      };
-    } catch (curlErr: any) {
-      throw new Error(`Provider ${new URL(url).hostname} failed: ${err.message?.substring(0, 150) || 'network'} — quota or connectivity`);
-    }
   }
 }
 
@@ -173,7 +198,7 @@ async function callGroq(messages: any[], modelName: string, executionLogs: any[]
 
   const tools = getOpenAiTools();
   const reqMessages = [
-    { role: "system", content: buildSystemPrompt(undefined, messages, activeFile) },
+    { role: "system", content: buildSystemPrompt(ACTIVE_PERSONA_ID, undefined, messages, activeFile) },
     ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
   ];
 
@@ -189,7 +214,8 @@ async function callGroq(messages: any[], modelName: string, executionLogs: any[]
       model: effectiveModel,
       messages: reqMessages,
       tools,
-      tool_choice: "auto"
+      tool_choice: "auto",
+      temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
     })
   });
 
@@ -197,7 +223,7 @@ async function callGroq(messages: any[], modelName: string, executionLogs: any[]
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
   let turn = 0;
-  while (data.choices && data.choices[0]?.message?.tool_calls && turn < 5) {
+  while (data.choices && data.choices[0]?.message?.tool_calls && turn < MAX_TOOL_TURNS) {
     turn++;
     const assistantMsg = data.choices[0].message;
     if (!assistantMsg.content) assistantMsg.content = "";
@@ -239,7 +265,8 @@ async function callGroq(messages: any[], modelName: string, executionLogs: any[]
         model: effectiveModel,
         messages: reqMessages,
         tools,
-        tool_choice: "auto"
+        tool_choice: "auto",
+        temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
       })
     });
 
@@ -254,53 +281,7 @@ async function callGroq(messages: any[], modelName: string, executionLogs: any[]
   return { text: responseText, logs: executionLogs };
 }
 
-// OpenAI CLI failover from codex-web as backup
-async function runOpenAICliFailover(messages: any[], modelName: string, executionLogs: any[], onProgress?: Function): Promise<string> {
-  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.text || "";
-  const openaiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || "";
-  
-  const codexWebPath = path.join(process.env.HOME || "/home/user", "codex-web");
-  const cwd = fs.existsSync(codexWebPath) ? codexWebPath : process.cwd();
-  
-  const escapedPrompt = lastUserMsg.replace(/"/g, '\\"');
-  const model = modelName || "gpt-4o-mini";
-  
-  onProgress?.({ type: 'status', data: { message: "⚠️ OpenAI API failed. Executing failover via OpenAI CLI inside codex-web..." } });
-  
-  const commands = [
-    `npx -y openai api chat.completions.create -m ${model} -g user "${escapedPrompt}"`,
-    `python3 -m openai api chat.completions.create -m ${model} -g user "${escapedPrompt}"`,
-    `openai api chat.completions.create -m ${model} -g user "${escapedPrompt}"`
-  ];
-  
-  let lastError = null;
-  for (const cmd of commands) {
-    try {
-      safeConsoleLog(`[Failover CLI] Trying command in ${cwd}: ${cmd}`);
-      const { stdout } = await execAsync(cmd, { 
-        cwd, 
-        env: { ...process.env, OPENAI_API_KEY: openaiKey, OPENAI_KEY: openaiKey },
-        timeout: 15000 
-      });
-      
-      if (stdout && stdout.trim()) {
-        safeConsoleLog(`[Failover CLI] Success!`, stdout.substring(0, 100));
-        try {
-          const parsed = JSON.parse(stdout);
-          const text = parsed.choices?.[0]?.message?.content || parsed.choices?.[0]?.text || stdout.trim();
-          return text;
-        } catch (_) {
-          return stdout.trim();
-        }
-      }
-    } catch (err: any) {
-      safeConsoleWarn(`[Failover CLI] Command failed: ${cmd}. Error: ${err.message}`);
-      lastError = err;
-    }
-  }
-  
-  throw new Error(`OpenAI CLI Failover failed. Last error: ${lastError?.message || 'unknown'}`);
-}
+
 
 // 2. OpenAI Direct Provider
 async function callOpenAI(messages: any[], modelName: string, executionLogs: any[], onProgress?: Function, activeFile?: string) {
@@ -309,7 +290,7 @@ async function callOpenAI(messages: any[], modelName: string, executionLogs: any
 
   const tools = getOpenAiTools();
   const reqMessages = [
-    { role: "system", content: buildSystemPrompt(undefined, messages, activeFile) },
+    { role: "system", content: buildSystemPrompt(ACTIVE_PERSONA_ID, undefined, messages, activeFile) },
     ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
   ];
 
@@ -326,7 +307,8 @@ async function callOpenAI(messages: any[], modelName: string, executionLogs: any
         model: modelName || "gpt-4o",
         messages: reqMessages,
         tools,
-        tool_choice: "auto"
+        tool_choice: "auto",
+        temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
       })
     });
 
@@ -334,7 +316,7 @@ async function callOpenAI(messages: any[], modelName: string, executionLogs: any
     if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
     let turn = 0;
-    while (data.choices && data.choices[0]?.message?.tool_calls && turn < 5) {
+    while (data.choices && data.choices[0]?.message?.tool_calls && turn < MAX_TOOL_TURNS) {
       turn++;
       const assistantMsg = data.choices[0].message;
       if (!assistantMsg.content) assistantMsg.content = "";
@@ -375,7 +357,8 @@ async function callOpenAI(messages: any[], modelName: string, executionLogs: any
           model: modelName || "gpt-4o",
           messages: reqMessages,
           tools,
-          tool_choice: "auto"
+          tool_choice: "auto",
+          temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
         })
       });
 
@@ -416,14 +399,7 @@ async function callOpenAI(messages: any[], modelName: string, executionLogs: any
       throw new Error(`OpenAI API failed due to quota or connectivity issue: ${err.message}`);
     }
 
-    safeConsoleWarn(`[OpenAI Direct] Failed, attempting codex-web CLI failover:`, err);
-    try {
-      const cliResultText = await runOpenAICliFailover(messages, modelName, executionLogs, onProgress);
-      onProgress?.({ type: 'chunk', data: { text: cliResultText } });
-      return { text: cliResultText, logs: executionLogs };
-    } catch (cliErr: any) {
-      throw new Error(`OpenAI API & CLI Failover both failed. API error: ${err.message}. CLI error: ${cliErr.message}`);
-    }
+    throw new Error(`OpenAI API failed: ${err.message}`);
   }
 }
 
@@ -434,7 +410,7 @@ async function callOpenRouter(messages: any[], modelName: string, executionLogs:
 
   const tools = getOpenAiTools();
   const reqMessages = [
-    { role: "system", content: buildSystemPrompt(undefined, messages, activeFile) },
+    { role: "system", content: buildSystemPrompt(ACTIVE_PERSONA_ID, undefined, messages, activeFile) },
     ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
   ];
 
@@ -452,7 +428,8 @@ async function callOpenRouter(messages: any[], modelName: string, executionLogs:
       model: modelName || "google/gemini-2.0-flash-001",
       messages: reqMessages,
       tools,
-      tool_choice: "auto"
+      tool_choice: "auto",
+      temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
     })
   });
 
@@ -460,7 +437,7 @@ async function callOpenRouter(messages: any[], modelName: string, executionLogs:
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
   let turn = 0;
-  while (data.choices && data.choices[0]?.message?.tool_calls && turn < 5) {
+  while (data.choices && data.choices[0]?.message?.tool_calls && turn < MAX_TOOL_TURNS) {
     turn++;
     const assistantMsg = data.choices[0].message;
     if (!assistantMsg.content) assistantMsg.content = "";
@@ -503,7 +480,8 @@ async function callOpenRouter(messages: any[], modelName: string, executionLogs:
         model: modelName || "google/gemini-2.0-flash-001",
         messages: reqMessages,
         tools,
-        tool_choice: "auto"
+        tool_choice: "auto",
+        temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
       })
     });
 
@@ -563,72 +541,73 @@ async function callGemini(messages: any[], modelName: string, executionLogs: any
 
   let lastErr: any = null;
 
+  const useStream = typeof (ai as any).models?.generateContentStream === 'function';
+
   for (const mName of candidateModels) {
     try {
-      onProgress?.({ type: 'status', data: { message: `Connecting to Gemini (${mName})...` } });
+      onProgress?.({ type: 'status', data: { message: `Connecting to Gemini (${mName})${useStream ? ' [stream]' : ''}...` } });
 
-      let response = await ai.models.generateContent({
-        model: mName,
-        contents,
-        config: {
-          systemInstruction: buildSystemPrompt(undefined, messages, activeFile),
-          tools: [{ functionDeclarations }],
-        },
-      });
+      const genConfig = {
+        systemInstruction: buildSystemPrompt(ACTIVE_PERSONA_ID, undefined, messages, activeFile),
+        tools: [{ functionDeclarations }],
+        temperature: ACTIVE_GEN_CONFIG.temperature,
+        topP: ACTIVE_GEN_CONFIG.topP,
+        topK: ACTIVE_GEN_CONFIG.topK
+      };
 
+      // Run a single generation. Streams text deltas live via onProgress; returns the turn's text + any tool calls.
+      const runOnce = async (): Promise<{ turnText: string; calls: any[] }> => {
+        let turnText = '';
+        let calls: any[] = [];
+        if (useStream) {
+          const stream = await (ai as any).models.generateContentStream({ model: mName, contents, config: genConfig });
+          for await (const ev of stream) {
+            const t = (ev && ev.text) ? ev.text : '';
+            if (t) { turnText += t; onProgress?.({ type: 'chunk', data: { text: t } }); }
+            if (ev?.functionCalls && ev.functionCalls.length) calls = ev.functionCalls;
+          }
+        } else {
+          const resp = await ai.models.generateContent({ model: mName, contents, config: genConfig });
+          if (resp.text) { turnText = resp.text; onProgress?.({ type: 'chunk', data: { text: resp.text } }); }
+          if (resp.functionCalls && resp.functionCalls.length) calls = resp.functionCalls;
+        }
+        return { turnText, calls };
+      };
+
+      let finalText = '';
       let turnCount = 0;
-      while (response.functionCalls && turnCount < 5) {
+      while (turnCount < MAX_TOOL_TURNS) {
         turnCount++;
-
-        const toolPromises = response.functionCalls.map(async (call) => {
+        const { turnText, calls } = await runOnce();
+        if (!calls || calls.length === 0) {
+          finalText = turnText;          // last generation = the answer
+          break;
+        }
+        // Execute tool calls in parallel, append results, then continue the conversation.
+        const toolResponses = await Promise.all(calls.map(async (call) => {
           const toolName = call.name;
           const toolArgs = call.args;
-
-          safeConsoleLog(`[Gemini Tool] Calling Parallel: ${toolName}`, toolArgs);
+          safeConsoleLog(`[Gemini Tool] ${toolName}`, toolArgs);
           onProgress?.({ type: 'tool_start', data: { toolName, toolArgs } });
-
           const result = await executeTool(toolName, toolArgs, onProgress as any);
-
           db.addLog({ timestamp: new Date().toISOString(), toolName, args: toolArgs, result });
           executionLogs.push({ toolName, args: toolArgs, result });
           onProgress?.({ type: 'tool_result', data: { toolName, result } });
-
-          return {
-            functionResponse: {
-              name: toolName,
-              response: result,
-              id: call.id
-            }
-          };
-        });
-
-        const toolResponses = await Promise.all(toolPromises);
-
-        const modelContent = response.candidates![0].content;
-        contents.push({ role: modelContent.role || 'model', parts: modelContent.parts });
-        contents.push({ role: "user", parts: toolResponses });
-
-        response = await ai.models.generateContent({
-          model: mName,
-          contents,
-          config: {
-            systemInstruction: buildSystemPrompt(undefined, messages, activeFile),
-            tools: [{ functionDeclarations }],
-          },
-        });
+          return { functionResponse: { name: toolName, response: result, id: call.id } };
+        }));
+        contents.push({ role: 'model', parts: calls.map((c: any) => ({ functionCall: c })) });
+        contents.push({ role: 'user', parts: toolResponses });
       }
 
-      if (response.text) {
-        onProgress?.({ type: 'chunk', data: { text: response.text } });
-        return { text: response.text, logs: executionLogs };
+      if (finalText.trim()) {
+        return { text: finalText, logs: executionLogs };
       }
     } catch (err: any) {
       const msg = String(err?.message || "");
       const isQuota = msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("quota");
-      safeConsoleLog(`[Gemini Model Status] Model ${mName} status: ${isQuota ? 'Quota Limit (429)' : 'Unavailable'}`);
+      safeConsoleLog(`[Gemini Model Status] ${mName}: ${isQuota ? 'Quota (429)' : 'Unavailable'} — ${msg.substring(0, 120)}`);
       lastErr = err;
-      if (isQuota) {
-        safeConsoleLog("[Gemini Model Status] Quota limit reached for Gemini project API key. Switching provider...");
+      if (isQuota || msg.toLowerCase().includes("api key") || msg.toLowerCase().includes("api_key")) {
         break;
       }
     }
@@ -645,7 +624,7 @@ async function callCloudflare(messages: any[], modelName: string, executionLogs:
 
   const model = modelName || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
   const reqMessages = [
-    { role: "system", content: buildSystemPrompt(undefined, messages, activeFile) },
+    { role: "system", content: buildSystemPrompt(ACTIVE_PERSONA_ID, undefined, messages, activeFile) },
     ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
   ];
 
@@ -657,7 +636,7 @@ async function callCloudflare(messages: any[], modelName: string, executionLogs:
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ messages: reqMessages })
+    body: JSON.stringify({ messages: reqMessages, temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP })
   });
 
   const data = await resp.json();
@@ -674,7 +653,7 @@ async function callOciModel(messages: any[], modelName: string, executionLogs: a
   const model = modelName || "qwen2.5:7b";
 
   const reqMessages = [
-    { role: "system", content: buildSystemPrompt(undefined, messages, activeFile) },
+    { role: "system", content: buildSystemPrompt(ACTIVE_PERSONA_ID, undefined, messages, activeFile) },
     ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
   ];
 
@@ -686,7 +665,8 @@ async function callOciModel(messages: any[], modelName: string, executionLogs: a
     body: JSON.stringify({
       model,
       prompt: reqMessages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\n\n"),
-      stream: false
+      stream: false,
+      options: { temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP }
     })
   });
 
@@ -806,7 +786,7 @@ async function callRoadQwen(messages: any[], modelName: string, executionLogs: a
   const model = modelName || "qwen3.6-plus";
   const tools = getOpenAiTools();
   const reqMessages = [
-    { role: "system", content: buildSystemPrompt(undefined, messages, activeFile) },
+    { role: "system", content: buildSystemPrompt(ACTIVE_PERSONA_ID, undefined, messages, activeFile) },
     ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
   ];
 
@@ -830,7 +810,8 @@ async function callRoadQwen(messages: any[], modelName: string, executionLogs: a
           model,
           messages: reqMessages,
           tools,
-          tool_choice: "auto"
+          tool_choice: "auto",
+          temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
         })
       });
 
@@ -838,7 +819,7 @@ async function callRoadQwen(messages: any[], modelName: string, executionLogs: a
       if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
       let turn = 0;
-      while (data.choices && data.choices[0]?.message?.tool_calls && turn < 5) {
+      while (data.choices && data.choices[0]?.message?.tool_calls && turn < MAX_TOOL_TURNS) {
         turn++;
         const assistantMsg = data.choices[0].message;
         if (!assistantMsg.content) assistantMsg.content = "";
@@ -879,7 +860,8 @@ async function callRoadQwen(messages: any[], modelName: string, executionLogs: a
             model,
             messages: reqMessages,
             tools,
-            tool_choice: "auto"
+            tool_choice: "auto",
+            temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
           })
         });
 
@@ -899,23 +881,22 @@ async function callRoadQwen(messages: any[], modelName: string, executionLogs: a
   throw new Error("All RoadQwen Cloud endpoints failed");
 }
 
-// TURBO PROXY - Dynamic context-aware local response engine
-async function callTurboFallback(messages: any[], executionLogs: any[], onProgress?: Function) {
-  try {
-    onProgress?.({ type: 'status', data: { message: "⚡ Turbo Proxy: routing to Gemini..." } });
-    return await callGemini(messages, "gemini-2.5-flash", executionLogs, onProgress);
-  } catch {}
+// Honest last-resort fallback — by the time we get here, every provider in the failover chain
+// already failed, so there is nothing real to retry. Tell the user the truth instead of faking success.
+async function callTurboFallback(_messages: any[], executionLogs: any[], onProgress?: Function) {
+  const configured: string[] = [];
+  if (process.env.GEMINI_API_KEY || process.env.GEMINI_KEY || process.env.GOOGLE_API_KEY) configured.push("Gemini");
+  if (process.env.GROQ_KEY || process.env.GROQ_API_KEY) configured.push("Groq");
+  if (process.env.OPENROUTER_API_KEY || process.env.OR_KEY) configured.push("OpenRouter");
+  if (process.env.OPENAI_API_KEY) configured.push("OpenAI");
 
-  try { return await callCloudflare(messages, "@cf/meta/llama-3.3-70b-instruct-fp8-fast", executionLogs, onProgress); } catch {}
-  try { return await callOpenRouter(messages, "google/gemini-2.0-flash-001", executionLogs, onProgress); } catch {}
-  try { return await callGroq(messages, "llama-3.3-70b-versatile", executionLogs, onProgress); } catch {}
+  const hint = configured.length
+    ? `Provider terkonfigurasi: **${configured.join(", ")}** — kemungkinan semua kehabisan kuota (429) atau API key tidak valid. Periksa file .env dan kuota di masing-masing dashboard, lalu coba lagi.`
+    : "Belum ada API key provider AI di `.env`. Isi minimal satu: `GEMINI_API_KEY`, `GROQ_KEY`, `OPENROUTER_API_KEY`, atau `OPENAI_API_KEY`, lalu restart server.";
 
-  // Clean fallback message
-  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.text || "";
-  const dynamicText = `I processed your request: "${lastUserMsg}". The system is active and ready for your next instructions.`;
-
-  onProgress?.({ type: 'chunk', data: { text: dynamicText } });
-  return { text: dynamicText, logs: executionLogs };
+  const text = `⚠️ **Tidak ada provider AI yang bisa menjawab saat ini.**\n\n${hint}`;
+  onProgress?.({ type: 'chunk', data: { text } });
+  return { text, logs: executionLogs };
 }
 
 // AuroRa-Ulti.X - Most advanced model, same as Gemini 2.5 Flash, self-upgrading capability
@@ -945,32 +926,28 @@ export async function runOrchestrator
   const executionLogs: any[] = [];
   const onProgress = options.onProgress;
 
-  // Verify codex-web module connection status
-  const codexWebPath = path.join(process.env.HOME || "/home/user", "codex-web");
-  const hasCodexWeb = fs.existsSync(codexWebPath);
-  if (hasCodexWeb) {
-    onProgress?.({ type: 'status', data: { message: "⚡ Codex-Web AI Assistance Active (Engine: AuroRa-Ulti.X)" } });
-  }
+  // Resolve persona → real temperature/topP + persona id (read by every provider & buildSystemPrompt).
+  const persona = resolvePersona(options.persona);
+  setActivePersona(persona.id);
+  setGenConfig({ temperature: persona.temperature, topP: persona.topP });
+
 
   // ⚡ OCI Ultra-Speed Fast-Cache & Semantic Lookup (Sub-5ms local speed)
   const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.text || "";
   const lastLower = lastUserMsg.toLowerCase();
 
+  // Lean failover chain — only genuinely distinct providers. Removed the 5 "aurora-*" aliases
+  // (all identical Gemini wrappers) and jules (creates a GitHub PR, not a chat reply) which only
+  // added latency without adding real fallback options.
   const providersToTry = [
     { name: provider, model: model },
     { name: "gemini", model: "gemini-2.5-flash" },
     { name: "gemini", model: "gemini-2.0-flash" },
-    { name: "aurora-ulti-x", model: "aurora-ulti-x" },
-    { name: "aurora-roc", model: "aurora-roc" },
-    { name: "aurora-40", model: "aurora-40" },
-    { name: "aurora-fun", model: "aurora-fun" },
-    { name: "aurora", model: "aurora-x" },
-    { name: "jules", model: "jules-agent" },
+    { name: "groq", model: "llama-3.3-70b-versatile" },
+    { name: "openrouter", model: "google/gemini-2.0-flash-001" },
+    { name: "openai", model: "gpt-4o-mini" },
     { name: "roadqwen", model: "qwen3.6-plus" },
     { name: "cfai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
-    { name: "openrouter", model: "google/gemini-2.0-flash-001" },
-    { name: "groq", model: "llama-3.3-70b-versatile" },
-    { name: "openai", model: "gpt-4o-mini" },
     { name: "oci", model: "qwen2.5:7b" }
   ];
 
@@ -1048,13 +1025,13 @@ export async function runOrchestrator
     }
   }
 
-  // TURBO PROXY FINAL FALLBACK - never fail, use local (fix All providers quota + page reload)
-  safeConsoleLog("[Turbo Proxy] Switching to local response engine...");
+  // FINAL FALLBACK — honest message (no mock success, no infrastructure leak).
+  safeConsoleLog("[Orchestrator] All providers exhausted. Returning honest fallback.");
   try {
     return await callTurboFallback(messages, executionLogs, onProgress);
   } catch (e) {
     return {
-      text: "⚠️ Turbo Proxy active but external providers quota — local execution still available. System online: Tailscale mesh 100.91.232.91, roadfx 100.100.237.104, rocfx 100.106.22.112, OCI 161.118.253.28 (qwen2.5:7b). Try: list_project_files, read_project_file, run_bash_command, terminal_manager, ssh_daemon_manager.",
+      text: "⚠️ Orchestrator gagal total. Cek console server & API key di .env.",
       logs: executionLogs
     };
   }

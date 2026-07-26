@@ -38,6 +38,11 @@ export default defineConfig({
       transformMixedEsModules: true,
     },
     rollupOptions: {
+      output: {
+        manualChunks: {
+          charts: ['recharts'],
+        },
+      },
       external: [
         '@rollup/rollup-linux-arm64-gnu',
         '@rollup/rollup-linux-x64-gnu',

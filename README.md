@@ -1,3 +1,24 @@
+# ⚡ ROCAgents — v5.15.0 (Refactor)
+
+> Pembaruan besar: agent goal-executing, anti-fabrication, struktur komponen, purge mock, streaming, persona, tool git/http/ask_model, fix autentikasi & push.
+
+## Ringkasan perubuan (v5.15.0)
+- **Backend**: 4 persona + temperature ke semua provider; token-streaming Gemini; budget tool-turn 12; prompt goal-executing & **anti-fabrication** (larang mengarang output); timeout fetch 90s; failover chain ramping; fallback jujur.
+- **Tool**: 43 → 16 tool inti + `git` (status/log/diff/pull/sync nyata), `http_request` (integrasi external), `ask_model` (model-cascading); guard ukuran file; auto-build non-blocking.
+- **Frontend**: `App.tsx` 3.200 → ~340 baris (komposisi: Sidebar/Header/ChatView/SelfDevelopmentHub lazy); streaming SSE + tombol Stop; PersonaSelector + ModelQuickSwitch; tool logs default hide + master toggle; toast notif; pesan user dari kiri; code-split (bundle −54%).
+- **Keamanan**: fix auth bypass + LoginGate; hapus endpoint RCE/SSRF; containment check path; token di-scrub.
+- **Purge mock**: ~44 endpoint + 27 tool mock dibuang; OAuth GitHub dihapus; codex-web dihapus; SyncDashboard dirampingkan (hanya integrasi nyata).
+- **Endpoint .env nyata**: `/api/env/{config,status,update}` + git push/updates pakai remote asli.
+
+## Menjalankan
+```bash
+cp .env.example .env   # isi min. 1 API key (GEMINI_API_KEY / GROQ_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY)
+npm install --legacy-peer-deps
+npm run build && npm start   # -> http://localhost:3000
+```
+
+---
+
 # ⚡ ROCAgents — Unified Hermes AI Agent CLI & Local Web UI
 
 <div align="center">

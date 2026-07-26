@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import Markdown from 'react-markdown';
 import { Message } from '../types';
-import { 
-  Bot, User, FileText, Sparkles, Copy, Minimize2, 
-  Terminal, Check, ChevronDown, ChevronRight, HardDrive, FileCode, ChevronUp, Download, CheckCircle2, XCircle, Eye, EyeOff, RefreshCw, RotateCcw, Globe
+import {
+  Bot, User, FileText, Sparkles, Copy,
+  Terminal, Check, ChevronDown, ChevronRight, FileCode, ChevronUp, Download, CheckCircle2, XCircle, Eye, EyeOff, RefreshCw, Globe, Wrench, Search
 } from 'lucide-react';
 
 interface ChatMessageProps {
@@ -96,7 +96,7 @@ function CodeBlock({ language, value, filename }: { language: string; value: str
       <div className="flex items-center justify-between px-3.5 py-2 bg-slate-900/90 border-b border-slate-800 select-none">
         <div className="flex items-center gap-2 min-w-0">
           <FileCode size={15} className="text-indigo-400 flex-shrink-0" />
-          <span className="text-[11px] font-bold text-indigo-200 uppercase tracking-wider truncate">
+          <span className="font-mono text-[12px] font-bold text-slate-50 truncate">
             {filename || (language ? `${language} snippet` : 'code')}
           </span>
         </div>
@@ -152,8 +152,8 @@ function FileDiffCard({ filename, content }: { filename: string; content: string
       {/* Header matching Image 1: </> rocagents/src/App.tsx   +1 -1 */}
       <div className="flex items-center justify-between px-3.5 py-2.5 bg-slate-900/90 border-b border-slate-800/80">
         <div className="flex items-center gap-2 truncate pr-2">
-          <FileCode size={15} className="text-slate-400 flex-shrink-0" />
-          <span className="font-semibold text-slate-200 truncate">{filename}</span>
+          <FileCode size={15} className="text-indigo-400 flex-shrink-0" />
+          <span className="font-mono text-[12px] font-bold text-slate-50 truncate">{filename}</span>
         </div>
         <div className="flex items-center gap-2 font-bold text-[11px] flex-shrink-0">
           <span className="text-emerald-400">+{addedLines || 1}</span>
@@ -229,12 +229,12 @@ function ExecutionCard({ log }: { log: any }) {
             <>
               <Eye size={13} className="text-indigo-400" />
               <span className="text-slate-400">Read</span>
-              <span className="font-semibold text-slate-200">{shortFilename}</span>
+              <span className="font-mono text-[12px] font-bold text-slate-50">{shortFilename}</span>
             </>
           ) : isWriteFile ? (
             <>
               <span className="text-indigo-400 font-bold">Edit</span>
-              <span className="text-slate-300 font-mono truncate px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800">{filename}</span>
+              <span className="font-mono text-[12px] font-bold text-slate-50 truncate px-2 py-0.5 rounded-md bg-slate-800/90 border border-slate-600/70 shadow-sm">{filename}</span>
             </>
           ) : (
             <>
@@ -426,137 +426,86 @@ function ExecutionCard({ log }: { log: any }) {
 
 // Collapsible Group Container matching Screenshots 1 & 2
 function ExecutionLogsGroup({ logs }: { logs: any[] }) {
-  // Default all summary groups to HIDE / COLLAPSED mode as requested by user
-  const [ranCommandsExpanded, setRanCommandsExpanded] = useState(true);
-  const [exploredReadsExpanded, setExploredReadsExpanded] = useState(false);
-  const [editedFilesExpanded, setEditedFilesExpanded] = useState(true);
+  // Tools run silently by default: data is KEPT (in message.logs) but hidden; one Show button reveals it.
+  const [shown, setShown] = useState(false);
+  const [openKey, setOpenKey] = useState<string | null>(null);
 
   if (!Array.isArray(logs) || logs.length === 0) return null;
 
-  const bashLogs = logs.filter(l => l && (l.toolName === 'run_bash_command' || l.toolName === 'shell'));
-  const readLogs = logs.filter(l => l && (l.toolName === 'read_project_file' || l.toolName === 'read_file'));
-  const editLogs = logs.filter(l => l && (l.toolName === 'write_project_file' || l.toolName === 'create_file'));
-  const otherLogs = logs.filter(l => l && !bashLogs.includes(l) && !readLogs.includes(l) && !editLogs.includes(l));
+  const has = (...names: string[]) => logs.filter(l => names.includes(l?.toolName));
+  const readLogs = has('read_project_file', 'read_file');
+  const editLogs = has('write_project_file', 'create_file', 'edit_file', 'edit_project_file');
+  const bashLogs = has('run_bash_command', 'shell', 'terminal_manager');
+  const searchLogs = has('search_codebase');
+  const webLogs = has('web_searching_module');
+  const httpLogs = has('http_request');
+  const modelLogs = has('ask_model');
+  const used = new Set([...readLogs, ...editLogs, ...bashLogs, ...searchLogs, ...webLogs, ...httpLogs, ...modelLogs]);
+  const otherLogs = logs.filter(l => !used.has(l));
+
+  const groups = [
+    { key: 'read', label: 'Read', Icon: Eye, color: 'text-sky-400', logs: readLogs },
+    { key: 'edit', label: 'Edit', Icon: FileCode, color: 'text-indigo-400', logs: editLogs },
+    { key: 'bash', label: 'Bash', Icon: Terminal, color: 'text-emerald-400', logs: bashLogs },
+    { key: 'search', label: 'Search', Icon: Search, color: 'text-amber-400', logs: searchLogs },
+    { key: 'web', label: 'Web', Icon: Globe, color: 'text-cyan-400', logs: webLogs },
+    { key: 'http', label: 'HTTP', Icon: Globe, color: 'text-fuchsia-400', logs: httpLogs },
+    { key: 'model', label: 'Model', Icon: Sparkles, color: 'text-purple-400', logs: modelLogs },
+    { key: 'other', label: 'Lainnya', Icon: FileCode, color: 'text-slate-400', logs: otherLogs },
+  ].filter(g => g.logs.length > 0);
+
+  const total = logs.length;
 
   return (
-    <div className="mt-3 space-y-2.5 font-mono text-xs animate-fade-in select-none">
-      {/* Group 1: Explored N reads / Exploring N reads */}
-      {readLogs.length > 0 && (
-        <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/80 shadow-md">
-          <div 
-            onClick={() => setExploredReadsExpanded(!exploredReadsExpanded)}
-            className="flex items-center justify-between p-2 px-3 bg-slate-900/80 text-slate-300 hover:text-white cursor-pointer text-xs"
-          >
-            <div className="flex items-center gap-2">
-              <ChevronRight size={13} className={`transition-transform ${exploredReadsExpanded ? 'rotate-90 text-indigo-400' : 'text-slate-500'}`} />
-              <Eye size={14} className="text-indigo-400" />
-              <span className="font-bold text-slate-200">Explored {readLogs.length} read{readLogs.length > 1 ? 's' : ''}</span>
-            </div>
-            <div className="flex items-center gap-1 text-[10px] text-slate-400 font-mono">
-              {exploredReadsExpanded ? (
-                <>
-                  <Eye size={12} className="text-indigo-400" />
-                  <span>Minimize ▲</span>
-                </>
-              ) : (
-                <>
-                  <EyeOff size={12} className="text-slate-500" />
-                  <span>Expand ▼</span>
-                </>
-              )}
-            </div>
-          </div>
-
-          {exploredReadsExpanded && (
-            <div className="p-2 space-y-2 bg-slate-950">
-              {readLogs.map((log, i) => (
-                <ExecutionCard key={i} log={log} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Group 2: Edited files N / Editing files N */}
-      {editLogs.length > 0 && (
-        <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/80 shadow-md">
-          <div 
-            onClick={() => setEditedFilesExpanded(!editedFilesExpanded)}
-            className="flex items-center justify-between p-2 px-3 bg-slate-900/80 text-slate-300 hover:text-white cursor-pointer text-xs"
-          >
-            <div className="flex items-center gap-2">
-              <ChevronRight size={13} className={`transition-transform ${editedFilesExpanded ? 'rotate-90 text-indigo-400' : 'text-slate-500'}`} />
-              <FileCode size={14} className="text-indigo-400" />
-              <span className="font-bold text-slate-200">Edited files {editLogs.length}</span>
-            </div>
-            <div className="flex items-center gap-1 text-[10px] text-slate-400 font-mono">
-              {editedFilesExpanded ? (
-                <>
-                  <Eye size={12} className="text-indigo-400" />
-                  <span>Minimize ▲</span>
-                </>
-              ) : (
-                <>
-                  <EyeOff size={12} className="text-slate-500" />
-                  <span>Expand ▼</span>
-                </>
-              )}
-            </div>
-          </div>
-
-          {editedFilesExpanded && (
-            <div className="p-2 space-y-2 bg-slate-950">
-              {editLogs.map((log, i) => (
-                <ExecutionCard key={i} log={log} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Group 3: Ran commands N / Running commands N */}
-      {bashLogs.length > 0 && (
-        <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/80 shadow-md">
-          <div 
-            onClick={() => setRanCommandsExpanded(!ranCommandsExpanded)}
-            className="flex items-center justify-between p-2 px-3 bg-slate-900/80 text-slate-300 hover:text-white cursor-pointer text-xs"
-          >
-            <div className="flex items-center gap-2">
-              <ChevronRight size={13} className={`transition-transform ${ranCommandsExpanded ? 'rotate-90 text-indigo-400' : 'text-slate-500'}`} />
-              <Terminal size={14} className="text-indigo-400" />
-              <span className="font-bold text-slate-200">Ran commands {bashLogs.length}</span>
-            </div>
-            <div className="flex items-center gap-1 text-[10px] text-slate-400 font-mono">
-              {ranCommandsExpanded ? (
-                <>
-                  <Eye size={12} className="text-indigo-400" />
-                  <span>Minimize ▲</span>
-                </>
-              ) : (
-                <>
-                  <EyeOff size={12} className="text-slate-500" />
-                  <span>Expand ▼</span>
-                </>
-              )}
-            </div>
-          </div>
-
-          {ranCommandsExpanded && (
-            <div className="p-2 space-y-2 bg-slate-950">
-              {bashLogs.map((log, i) => (
-                <ExecutionCard key={i} log={log} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Remaining other tool logs */}
-      {otherLogs.length > 0 && (
-        <div className="p-2 space-y-2">
-          {otherLogs.map((log, i) => (
-            <ExecutionCard key={i} log={log} />
+    <div className="mt-3 space-y-2 font-mono text-xs animate-fade-in select-none">
+      <button
+        type="button"
+        onClick={() => setShown(s => !s)}
+        className="flex items-center gap-2 w-full p-2 px-3 rounded-xl border border-slate-700/70 bg-slate-900/70 hover:bg-slate-800/80 hover:border-slate-600 text-slate-300 hover:text-white transition-all cursor-pointer"
+        title={shown ? "Sembunyikan aktivitas tool" : "Tampilkan aktivitas tool"}
+      >
+        <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-indigo-500/15 border border-indigo-500/25 flex-shrink-0">
+          <Wrench size={13} className={shown ? "text-indigo-300" : "text-slate-400"} />
+        </span>
+        <span className="font-bold text-slate-100">{total} tool{total > 1 ? 's' : ''} dijalankan</span>
+        <span className="hidden sm:flex items-center gap-1 ml-1 overflow-hidden flex-wrap">
+          {groups.map(g => (
+            <span key={g.key} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-800/80 border border-slate-700/60 text-[9px] font-bold ${g.color}`} title={`${g.label}: ${g.logs.length}`}>
+              <g.Icon size={9} />{g.logs.length}
+            </span>
           ))}
+        </span>
+        <span className={`ml-auto flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider flex-shrink-0 ${shown ? 'text-indigo-300' : 'text-slate-500'}`}>
+          {shown ? (<><ChevronUp size={12} /> Sembunyikan</>) : (<><ChevronDown size={12} /> Tampilkan</>)}
+        </span>
+      </button>
+
+      {shown && (
+        <div className="space-y-1.5 pl-1">
+          {groups.map(g => {
+            const open = openKey === g.key;
+            return (
+              <div key={g.key} className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/70">
+                <div
+                  onClick={() => setOpenKey(open ? null : g.key)}
+                  className="flex items-center justify-between p-2 px-3 bg-slate-900/70 hover:bg-slate-900 text-slate-300 hover:text-white cursor-pointer transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <ChevronRight size={13} className={`transition-transform ${open ? 'rotate-90' : ''} ${open ? g.color : 'text-slate-500'}`} />
+                    <g.Icon size={14} className={g.color} />
+                    <span className="font-bold text-slate-100">{g.label}</span>
+                    <span className="text-[10px] text-slate-500">{g.logs.length}</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500">{open ? 'Sembunyikan' : 'Tampilkan'}</span>
+                </div>
+                {open && (
+                  <div className="p-2 space-y-2 bg-slate-950 border-t border-slate-800/60">
+                    {g.logs.map((log, i) => <ExecutionCard key={i} log={log} />)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -608,10 +557,10 @@ export function ChatMessage({ message }: ChatMessageProps) {
   };
 
   return (
-    <div className={`flex w-full mb-8 group animate-fade-in ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`flex flex-col max-w-4xl min-w-0 ${isUser ? 'items-end' : 'items-start'}`}>
+    <div className={`flex w-full mb-8 group animate-fade-in justify-start`}>
+      <div className={`flex flex-col max-w-4xl min-w-0 items-start`}>
         {/* Message Header (Sender Name) - Minimalist style */}
-        <div className={`flex items-center gap-2 mb-1 px-1 select-none ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+        <div className={`flex items-center gap-2 mb-1 px-1 select-none flex-row`}>
           <span className="text-[10px] font-bold text-theme-text-muted uppercase tracking-widest opacity-80 group-hover:opacity-100 transition-opacity">
             {isUser ? 'You' : 'Codex AI'}
           </span>
@@ -622,7 +571,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
         {/* Message Content Container - "Polos" (Plain) without boxes */}
         <div className={`relative flex flex-col gap-2 min-w-0 text-theme-text-primary px-1 py-0.5 ${
-          isUser ? 'text-right' : 'text-left'
+          'text-left'
         }`}>
           
           {/* Uploaded Attachments */}
@@ -638,7 +587,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
           )}
 
           {message.file && (
-            <div className={`flex items-center gap-2.5 mb-1 max-w-md ${isUser ? 'ml-auto' : 'mr-auto'}`}>
+            <div className={`flex items-center gap-2.5 mb-1 max-w-md mr-auto`}>
               <div className="p-1.5 text-indigo-400 rounded-lg flex-shrink-0">
                 <FileText size={16} />
               </div>
@@ -653,7 +602,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
           {/* High-Contrast Markdown Text Body - Clean and Direct */}
           {message.text && (
-            <div className={`prose dark:prose-invert prose-sm sm:prose-base max-w-none text-theme-text-primary break-words leading-relaxed ${isUser ? 'text-right' : 'text-left'}`}>
+            <div className={`prose dark:prose-invert prose-sm sm:prose-base max-w-none text-theme-text-primary break-words leading-relaxed text-left`}>
               <Markdown
                 components={{
                   code({ node, className, children, ...props }) {
@@ -674,7 +623,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
           )}
 
           {/* Actions Bar - Subtle hover actions */}
-          <div className={`flex items-center gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity ${isUser ? 'justify-end' : 'justify-start'}`}>
+          <div className={`flex items-center gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity justify-start`}>
             {message.text && (
               <button
                 type="button"
@@ -693,7 +642,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
           {/* Execution Output Group */}
           {message.logs && message.logs.length > 0 && (
-            <div className={`w-full ${isUser ? 'flex justify-end' : ''}`}>
+            <div className={`w-full `}>
               <div className="w-full max-w-2xl">
                 <ExecutionLogsGroup logs={message.logs} />
               </div>
@@ -702,7 +651,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
           {/* Thinking Indicator */}
           {message.isTyping && (
-            <div className={isUser ? 'flex justify-end' : ''}>
+            <div className={''}>
               <ThinkingIndicator statusMessage={message.statusMessage} />
             </div>
           )}

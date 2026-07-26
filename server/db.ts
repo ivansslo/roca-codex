@@ -71,7 +71,6 @@ interface DatabaseSchema {
   memories?: MemoryItem[];
   selfCapabilities?: SelfCapability[];
   scheduledRoutines?: ScheduledRoutine[];
-  snowflakeModels?: string[];
 }
 
 const DEFAULT_SCHEMA: DatabaseSchema = {
@@ -164,8 +163,8 @@ const DEFAULT_SCHEMA: DatabaseSchema = {
         properties: {
           name: { type: "string", description: "Unique name of the new tool." },
           description: { type: "string", description: "A detailed description of what the tool does." },
-          parameters: { 
-            type: "object", 
+          parameters: {
+            type: "object",
             description: "JSON schema describing the parameters."
           }
         },
@@ -206,14 +205,14 @@ const DEFAULT_SCHEMA: DatabaseSchema = {
     },
     {
       name: "manage_memory",
-      description: "Store, retrieve, or clear structured long-term memory facts (daya ingat / penyimpanan banyak) to build an advanced cognitive base.",
+      description: "Store, retrieve, or clear structured long-term memory facts to build a persistent knowledge base.",
       parameters: {
         type: "object",
         properties: {
           action: { type: "string", description: "Memory action: 'store', 'retrieve', 'delete', or 'list'." },
           key: { type: "string", description: "Unique key identifying the fact." },
           value: { type: "string", description: "Text description or JSON string to store (required for 'store')." },
-          category: { type: "string", description: "Optional category tag (e.g. 'webvirtcloud', 'lsmod', 'general')." }
+          category: { type: "string", description: "Optional category tag." }
         },
         required: ["action"]
       }
@@ -225,17 +224,17 @@ const DEFAULT_SCHEMA: DatabaseSchema = {
         type: "object",
         properties: {
           action: { type: "string", description: "Action: 'register', 'execute', or 'list'." },
-          name: { type: "string", description: "Name of the self-development capability (e.g. 'PatchDriver', 'OptimizeSync')." },
-          codeSnippet: { type: "string", description: "Active JavaScript/TypeScript statements executing edits or system optimizations." },
+          name: { type: "string", description: "Name of the self-development capability." },
+          codeSnippet: { type: "string", description: "JavaScript/TypeScript statements executing edits or system optimizations." },
           purpose: { type: "string", description: "Purpose of the patch or enhancement." },
-          category: { type: "string", description: "Optional category tag or group for the capability (e.g. 'WebVirtCloud', 'lsmod', 'general')." }
+          category: { type: "string", description: "Optional category tag." }
         },
         required: ["action"]
       }
     },
     {
       name: "run_bash_command",
-      description: "Run a bash command in the terminal.",
+      description: "Run a bash command in the terminal and return stdout/stderr.",
       parameters: {
         type: "object",
         properties: {
@@ -245,357 +244,68 @@ const DEFAULT_SCHEMA: DatabaseSchema = {
       }
     },
     {
-      name: "npm_package_manager",
-      description: "Manage, query, or publish npm packages using authenticated NPM_API_KEY (roadcx account).",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action to perform: 'whoami', 'view', or 'publish'." },
-          packageName: { type: "string", description: "Package name for view command." }
-        },
-        required: ["action"]
-      }
-    },
-    {
-      name: "clawhub_sync",
-      description: "Synchronize packages or workspace components with ClawHub ecosystem hub.",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Sync action: 'sync', 'status', or 'publish'." },
-          moduleName: { type: "string", description: "Module name to synchronize." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "clawlink_bridge",
-      description: "Bridge mesh network communications and route inter-agent messages across ClawLink nodes.",
-      parameters: {
-        type: "object",
-        properties: {
-          targetNode: { type: "string", description: "Target node (e.g. 'OCI-Singapore-VM' or 'Termux-Android-Host')." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "skilllm_executor",
-      description: "Execute or register autonomous skills via SkillLM cognitive model engine.",
-      parameters: {
-        type: "object",
-        properties: {
-          skillName: { type: "string", description: "Skill name to execute." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "codex_refact_engine",
-      description: "Self-Cognitive AST code refactoring and structural optimization engine powered by ivansslo/codex-refact.",
-      parameters: {
-        type: "object",
-        properties: {
-          filename: { type: "string", description: "Target file to refactor." },
-          instruction: { type: "string", description: "Refactoring instruction." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "lsmod_kernel_analyzer",
-      description: "Self-Cognitive kernel driver monitoring, module symbols inspector, and device memory analyzer powered by ivansslo/lsmod.",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action: 'list', 'inspect', or 'symbols'." },
-          moduleName: { type: "string", description: "Target module name to inspect." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "neon_data_api",
-      description: "Execute serverless HTTP REST queries and data synchronization against Neon Console PostgreSQL cluster (Project: ROCAgents).",
-      parameters: {
-        type: "object",
-        properties: {
-          endpoint: { type: "string", description: "REST endpoint path relative to /neondb/rest/v1 (e.g. '/memories')." },
-          method: { type: "string", description: "HTTP method: 'GET' or 'POST'." },
-          payload: { type: "object", description: "JSON payload for POST requests." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "harness_kv_store",
-      description: "Synchronize or manage secrets, API keys, and KV feature flags using Harness.io Vault (Account: arrayfs, Service Account: ROCAgents-Service).",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action: 'sync', 'get', or 'set'." },
-          secretKey: { type: "string", description: "Key name to store or read." },
-          secretValue: { type: "string", description: "Secret string value." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "zapier_mcp_action",
-      description: "Execute Zapier automation workflows via Model Context Protocol (MCP v1).",
-      parameters: {
-        type: "object",
-        properties: {
-          actionName: { type: "string", description: "Name of the Zapier workflow action." },
-          payload: { type: "object", description: "JSON payload for the Zapier action." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "clerk_auth_manager",
-      description: "Manage Clerk user authentication sessions and identity directory (Domain: awake-chicken-95.clerk.accounts.dev).",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action: 'verify', 'get_user', or 'list_sessions'." },
-          userId: { type: "string", description: "Clerk User ID to query." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "github_oauth_app_manager",
-      description: "Connect, synchronize, and execute repository actions via GitHub OAuth App 'ROCAgents' (Client ID: Ov23litvasZbgpCiNHIg).",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action: 'status', 'sync', or 'get_user'." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "backboard_assistant_engine",
-      description: "Query or execute custom workflows with Backboard.io AI Assistant Engine (Assistant ID: 3372ebdd-9e29-44c2-b373-8b693c142e6d).",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action: 'status' or 'query'." },
-          prompt: { type: "string", description: "Query prompt for the Backboard assistant." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "honcho_memory_engine",
-      description: "Manage, query, and synchronize long-term dialectic memory and cognitive user cards for Ivan Ssl (ivansslo) via Plastic Labs Honcho API.",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action: 'status', 'save_user_card', or 'get_context'." },
-          factKey: { type: "string", description: "Fact key or user card trait name." },
-          factValue: { type: "string", description: "Fact content or preference summary." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "grafana_telemetry_manager",
-      description: "Inspect metrics, alert triggers, and Grafana.com OAuth SSO telemetry for Organization 'roc' across local Termux and OCI nodes.",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action: 'status', 'list_dashboards', or 'query_metrics'." },
-          targetMetric: { type: "string", description: "Metric name e.g. 'orchestrator_ttft_ms' or 'container_cpu_usage'." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "jules_coding_agent",
-      description: "Dispatch autonomous asynchronous code refactoring, bug fixes, and feature PR tasks to Google Labs Jules AI Agent on repository ivansslo/rocagents.",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action: 'status' or 'create_session'." },
-          prompt: { type: "string", description: "Coding instruction prompt for Jules AI agent." },
-          targetRepo: { type: "string", description: "Target GitHub repository e.g. 'ivansslo/rocagents'." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "qwen_cloud_manager",
-      description: "Manage, inspect and dispatch queries to RoadQwen & Qwen Cloud Models (qwen3.6-plus, qwen3.7-max, qwen3-coder-plus) via Alibaba Cloud Model Studio API.",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action: 'status' or 'list_models'." },
-          modelName: { type: "string", description: "Qwen model ID e.g. 'qwen3.6-plus'." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "rocspace_monorepo_manager",
-      description: "Inspect, manage, and synchronize the single source of truth monorepo ivansslo/rocspace (v19.1.1 Command Center, roc-site router, hermes-cloudflare gateway).",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action: 'status', 'list_workers', or 'inspect_handoff'." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "aperture_tailscale_connector",
-      description: "Manage Aperture Beta node roadfx - isolated browser inside Tailscale tailnet. Handles QR/auth authorization flow (Waiting for authorization → Ready), mesh status, and private service access for OCI/Grafana/rocspace. Critical for understanding screenshot aperture.tailscale.com/signup Setting up roadfx.",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action: 'status', 'authorize_guide', or 'generate_auth_key_instructions'." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "oci_tailscale_shell_integration",
-      description: "Configure OCI Singapore VM (100.93.139.73 / 161.118.253.28) as default local shell in Termux. Installs tailscale, sets up auto SSH/Mosh, rocd oci launcher, Ollama tunnel 11434, and makes Termux boot directly into OCI shell with Termux local fallback.",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action: 'status', 'install_guide', or 'generate_bashrc_block'." }
-        },
-        required: []
-      }
-    },
-    {
-      name: "ssh_daemon_manager",
-      description: "Auto-detect and manage local SSH daemon like SimpleSSHD app screenshot (port 8022, user ubuntu, fingerprints 65:ff:dd:47:54:4e:8e:17:f0:83:1c:10:a1:1c:63:1c, path /storage/emulated/0/, Password enabled, GENERATE button). Scans listening ports 22/8022/2222, ps aux sshd, tailscale IPs 100.91.232.91/100.106.22.112/100.100.237.104, and can connect via ssh -p 8022 ubuntu@127.0.0.1 or via Tailscale. Agent capability 100% for SSH daemon.",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action: 'status', 'scan', 'connect', or 'generate_keys'. Scans ports 8022/22 like screenshot." },
-          host: { type: "string", description: "SSH host (default 127.0.0.1 or Tailscale IP 100.91.232.91 / 100.106.22.112)" },
-          port: { type: "number", description: "SSH port (default 8022 as in screenshot, or 22)" },
-          user: { type: "string", description: "SSH user (default ubuntu as in screenshot)" }
-        },
-        required: []
-      }
-    },
-    {
       name: "terminal_manager",
-      description: "Dedicated terminal for project with 100% local execution (fix page reload + logs rapi). Executes bash commands via POST /api/terminal/exec, returns stdout/stderr, never depends on external AI quotas. Use for: ls -la, pwd, cat .env, npm start logs, tailscale status, etc. Implements Turbo Proxy for all executions.",
+      description: "Execute a bash command in the project workspace and return stdout/stderr. Use for: ls, cat files, build output, etc.",
       parameters: {
         type: "object",
         properties: {
-          command: { type: "string", description: "Bash command to execute, e.g. 'ls -la', 'cat server.ts | head -n 50', 'tailscale status', 'npm start 2>&1 | head -n 100'" },
-          timeout: { type: "number", description: "Timeout ms (default 30000)" }
+          command: { type: "string", description: "Bash command to execute, e.g. 'ls -la', 'cat server.ts | head -n 50'." },
+          timeout: { type: "number", description: "Timeout ms (default 30000)." }
         },
         required: ["command"]
       }
     },
-        {
-      name: "advanced_reasoning_engine",
-      description: "Exclusive array function thinking: thinking, observation, grounding, hacking, viewing. Replaces simple KV and asking Terry with exclusive 5-step reasoning. thinking=internal chain-of-thought, observation=read files/logs/env, grounding=verify with tools, hacking=exec/edit code, viewing=render final output. Returns array of reasoning steps for best results.",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action: 'think', 'observe', 'ground', 'hack', 'view', or 'full_cycle'. Full cycle runs all 5." },
-          query: { type: "string", description: "User query to reason about, e.g. 'Koneksi ke sshdaemon Key semua ada di .env'" },
-          context: { type: "string", description: "Optional context (file content, logs, env snippet)" }
-        },
-        required: []
-      }
-    },
-    {
-      name: "fiche_client",
-      description: "Pastebin client using ivansslo/fiche (https://github.com/ivansslo/fiche) - fork of solusipse/fiche, command line pastebin. Replaces termbin.com:9999. Uses: echo text | nc termbin.com 9999 or local fiche server localhost 9999. User request: TermBin masih digunakan kah? Jika iya gunakan source saya di ivansslo/fiche. Returns URL like http://termbin.com/xxxx or local fiche URL. For neat logs display.",
-      parameters: {
-        type: "object",
-        properties: {
-          content: { type: "string", description: "Content to upload to fiche/termbin, e.g. logs, tailscale status, npm build output. Max 100k chars." },
-          action: { type: "string", description: "Action: 'upload' to termbin.com via nc, or 'upload_local' to local fiche at localhost:9999, or 'status'" },
-          server: { type: "string", description: "Fiche server: termbin.com or localhost or custom, default termbin.com (or ivansslo/fiche instance)" }
-        },
-        required: ["content"]
-      }
-    },
     {
       name: "web_searching_module",
-      description: "Peningkatan Module WebSearching: Eksekusi pencarian web multi-engine dengan 4-tahap analisa kognitif (1. Analisa, 2. Pemahaman, 3. Kesimpulan, 4. Penerapan). Menyajikan fakta web langsung, ekstraksi kode, dan langkah eksekusi real-time secara komprehensif.",
+      description: "Search the web for up-to-date information and return extracted text snippets.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Topik atau query pencarian web yang akan dianalisa." },
-          depth: { type: "string", description: "Kedalaman pencarian: 'quick' atau 'deep' (default: 'deep')." },
-          category: { type: "string", description: "Kategori pencarian: 'tech', 'code', 'general', atau 'doc'." }
+          query: { type: "string", description: "The web search query." },
+          depth: { type: "string", description: "Search depth: 'quick' or 'deep' (default 'deep')." },
+          category: { type: "string", description: "Category: 'tech', 'general', or 'doc'." }
         },
         required: ["query"]
       }
     },
     {
-      name: "turbo_proxy_manager",
-      description: "Manage Turbo Proxy speed - build additional proxy from all connected clouds (OCI 161.118.253.28, Tailscale mesh 100.91.232.91/100.100.237.104/100.106.22.112, Cloudflare Workers hub.roadfx.biz.id, SimpleSSHD 8022, TermOnePlus). Speed: Sub-5ms FastCache. When Turbo Proxy active, only user models for upgrade. Implements auto refresh IP roadfx connected oci as localhost tailscale.",
+      name: "http_request",
+      description: "Connect to an EXTERNAL service/API on the user's request (integration). Fetch any URL with GET/POST, optional headers and JSON body. Use this to integrate with or pull data from external APIs the user asks for. Responses are capped (timeout 20s, body 64KB).",
       parameters: {
         type: "object",
         properties: {
-          action: { type: "string", description: "Action: 'status', 'speed_test', 'build_proxy', 'list_clouds', 'filter_models'" },
-          cloud: { type: "string", description: "Cloud to test: oci, tailscale, cloudflare, sshdaemon, all" }
+          url: { type: "string", description: "Full external URL (e.g. 'https://api.example.com/data')." },
+          method: { type: "string", description: "HTTP method: 'GET' or 'POST' (default GET)." },
+          headers: { type: "object", description: "Optional request headers as key/value pairs." },
+          body: { type: "object", description: "Optional JSON body for POST requests." }
         },
-        required: []
+        required: ["url"]
       }
     },
     {
-      name: "pastebin_js_client",
-      description: "Logs pastebin Api Wrapper NodeJS https://github.com/j3lte/pastebin-js - Pastebin.com API wrapper for NodeJS. Use for neat logs display in chat with pastebin.com. Replaces termbin.com and termoneplus. User request gunakan logs pastebin Api Wrapper NodeJS https://github.com/j3lte/pastebin-js",
+      name: "ask_model",
+      description: "Delegate a sub-question to ANOTHER AI model/provider (model-cascading) when the user asks the AI to consult/compare models. Calls gemini/groq/openai/openrouter with the given prompt and returns that model's answer text. Use when the owner requests input from another model.",
       parameters: {
         type: "object",
         properties: {
-          content: { type: "string", description: "Content to paste to Pastebin.com via pastebin-js wrapper" },
-          title: { type: "string", description: "Paste title" },
-          format: { type: "string", description: "Syntax format (e.g. javascript, python, text)" },
-          privacy: { type: "string", description: "0=public, 1=unlisted, 2=private" },
-          expiration: { type: "string", description: "Expiration: N=never, 10M, 1H, 1D, 1W, 2W, 1M, 6M, 1Y" }
+          provider: { type: "string", description: "Target provider: 'gemini', 'groq', 'openai', or 'openrouter'." },
+          model: { type: "string", description: "Optional model id for that provider (e.g. 'gemini-2.5-flash', 'llama-3.3-70b-versatile', 'gpt-4o-mini'). Defaults to a sensible model per provider." },
+          prompt: { type: "string", description: "The question/prompt to send to the other model." }
         },
-        required: ["content"]
+        required: ["provider", "prompt"]
       }
     },
     {
-      name: "pastebin_python_client",
-      description: "Logs pastebin Api Wrapper Python https://github.com/six519/PastebinPython - Pastebin.com API wrapper for Python. Use for neat logs display. User request Api Wrapper Python https://github.com/six519/PastebinPython",
+      name: "git",
+      description: "REAL git operations on the workspace repository. Actions: 'status' (git status), 'log' (recent commits), 'diff' (unstaged diff), 'pull' (git pull), 'sync' (stage all + commit + push, uses GITHUB_PAT). Returns ACTUAL stdout/stderr — never invent. Use when the user asks to check/update/push the repo.",
       parameters: {
         type: "object",
         properties: {
-          content: { type: "string", description: "Content to paste via PastebinPython" },
-          title: { type: "string", description: "Paste title" },
-          format: { type: "string", description: "Format" }
+          action: { type: "string", description: "One of: 'status', 'log', 'diff', 'pull', 'sync' (default 'status')." },
+          message: { type: "string", description: "Commit message (only for 'sync')." },
+          branch: { type: "string", description: "Branch for 'sync' (default 'main')." }
         },
-        required: ["content"]
-      }
-    },
-    {
-      name: "cubecl_backend",
-
-      description: "Backend ivansslo/cubecl - Multi-platform high-performance compute language extension for Rust (CUDA/WebGPU/Metal). User request Backend; ivansslo/cubecl. Provides GPU compute kernels, ML tensor ops.",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action: 'status', 'clone', 'build', 'test'" }
-        },
-        required: []
-      }
-    },
-    {
-      name: "cmux_module",
-      description: "Module tambahan ivansslo/cmux - terminal multiplexer for TermOnePlus + SimpleSSHD. User request module tambahan; ivansslo/cmux. Manages panes, sessions, SSH multiplexing.",
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", description: "Action: 'status', 'clone', 'start', 'list_sessions'" }
-        },
-        required: []
+        required: ["action"]
       }
     }
   ],
@@ -623,36 +333,10 @@ const DEFAULT_SCHEMA: DatabaseSchema = {
       description: "An autonomous fleet operations hub specializing in routing, spatial maps, and turn-by-turn navigation data syncing.",
       syncLogs: []
     },
-    {
-      id: "lsmod-analyzer",
-      name: "lsmod Kernel Driver Analyzer",
-      status: "unsynced",
-      url: "http://localhost:9095",
-      componentsCount: 0,
-      filesCount: 12,
-      apiEndpointsCount: 8,
-      description: "Linux kernel modules driver monitor. Synchronizes driver maps, loaded symbols, module dependencies, and direct VM memory allocations.",
-      syncLogs: []
-    },
-    {
-      id: "codex-web",
-      name: "Codex Web IDE",
-      status: "unsynced",
-      url: "http://localhost:3010",
-      componentsCount: 15,
-      filesCount: 38,
-      apiEndpointsCount: 10,
-      description: "Self-Cognitive AST code refactoring and advanced code generation engine powered by ivansslo/codex-web.",
-      syncLogs: []
-    }
   ],
   chatSessions: [],
   memories: [],
-  selfCapabilities: [],
-  snowflakeModels: [
-    "Snowflake-Cortex-Roc-v1",
-    "Predictive-Robotic-Maintenance-v4"
-  ]
+  selfCapabilities: []
 };
 
 function sanitizeSchema(obj: any): any {
@@ -687,13 +371,13 @@ class Database {
           }));
         }
 
-        // Ensure default tools are present
-        const existingNames = new Set(this.data.tools.map(t => t.name));
-        DEFAULT_SCHEMA.tools.forEach(defaultTool => {
-          if (!existingNames.has(defaultTool.name)) {
-            this.data.tools.push(defaultTool);
-          }
-        });
+        // Reconcile tools: keep only the ones defined in DEFAULT_SCHEMA plus any user-added tools.
+        if (this.data.tools) {
+          const defaultNames = new Set(DEFAULT_SCHEMA.tools.map(t => t.name));
+          // Replace any default tool definitions with the latest version; keep user-added extras.
+          const userExtras = (this.data.tools || []).filter(t => !defaultNames.has(t.name));
+          this.data.tools = [...DEFAULT_SCHEMA.tools, ...userExtras];
+        }
 
         // Ensure default syncedApps are present
         if (!this.data.syncedApps) {
@@ -705,7 +389,7 @@ class Database {
             this.data.syncedApps.push(defaultApp);
           }
         });
-        
+
         this.save();
       } catch {
         this.data = DEFAULT_SCHEMA;
@@ -898,24 +582,6 @@ class Database {
     if (!this.data.scheduledRoutines) return;
     this.data.scheduledRoutines = this.data.scheduledRoutines.filter(r => r.id !== id);
     this.save();
-  }
-
-  getSnowflakeModels(): string[] {
-    if (!this.data.snowflakeModels) {
-      this.data.snowflakeModels = ["Snowflake-Cortex-Roc-v1", "Predictive-Robotic-Maintenance-v4"];
-      this.save();
-    }
-    return this.data.snowflakeModels;
-  }
-
-  addSnowflakeModel(modelName: string) {
-    if (!this.data.snowflakeModels) {
-      this.data.snowflakeModels = ["Snowflake-Cortex-Roc-v1", "Predictive-Robotic-Maintenance-v4"];
-    }
-    if (!this.data.snowflakeModels.includes(modelName)) {
-      this.data.snowflakeModels.push(modelName);
-      this.save();
-    }
   }
 }
 
