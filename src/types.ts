@@ -57,3 +57,15 @@ export interface AppSyncInfo {
   description: string;
   syncLogs: string[];
 }
+
+export type AgentRole = 'architect' | 'developer' | 'pentester' | 'qa';
+
+export interface AgentStep {
+  id: string;
+  agentRole: AgentRole;
+  title: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'idle';
+  timestamp: string;
+  thoughts?: string;
+  actualModel?: string;
+}
