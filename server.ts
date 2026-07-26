@@ -484,6 +484,46 @@ async function startServer() {
     } catch (err: any) { res.status(500).json({ status: "error", error: err.message }); }
   });
 
+  app.post("/api/ssh/generate-keys", async (req, res) => {
+    try {
+      const { exec } = await import("child_process");
+      const { promisify } = await import("util");
+      const execAsync = promisify(exec);
+      const home = process.env.HOME || "/data/data/com.termux/files/home";
+      const sshDir = path.join(home, ".ssh");
+      if (!fs.existsSync(sshDir)) fs.mkdirSync(sshDir, { recursive: true });
+      const keyPath = path.join(sshDir, "rocagents_key");
+      try { fs.unlinkSync(keyPath); fs.unlinkSync(keyPath + ".pub"); } catch {}
+      try {
+        await execAsync(`ssh-keygen -t ed25519 -f ${JSON.stringify(keyPath)} -N "" -C "rocagents"`, { timeout: 15000 });
+      } catch (e: any) {
+        return res.status(500).json({ error: "ssh-keygen gagal. Jalankan sekali: pkg install openssh. (" + e.message + ")" });
+      }
+      const pubKey = fs.existsSync(keyPath + ".pub") ? fs.readFileSync(keyPath + ".pub", "utf-8").trim() : "";
+
+      // Best-effort: pasang pubkey ke authorized_keys daemon
+      const authKeys = "/sdcard/SshDaemon/authorized_keys";
+      let autoInstalled = false, autoInstallError = "";
+      try {
+        const dir = path.dirname(authKeys);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const existing = fs.existsSync(authKeys) ? fs.readFileSync(authKeys, "utf-8") : "";
+        if (!existing.includes(pubKey)) fs.appendFileSync(authKeys, pubKey + "\n", "utf-8");
+        autoInstalled = true;
+      } catch (e: any) { autoInstallError = e.message; }
+
+      // Simpan SSH_KEY_PATH ke .env + process.env
+      process.env.SSH_KEY_PATH = keyPath;
+      const envPath = path.join(process.cwd(), ".env");
+      let lines = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf-8").split("\n") : [];
+      const idx = lines.findIndex(l => /^\s*SSH_KEY_PATH\s*=/.test(l));
+      if (idx >= 0) lines[idx] = `SSH_KEY_PATH=${keyPath}`; else lines.push(`SSH_KEY_PATH=${keyPath}`);
+      fs.writeFileSync(envPath, lines.join("\n") + "\n", "utf-8");
+
+      res.json({ success: true, keyPath, publicKey: pubKey, authorizedKeysPath: authKeys, autoInstalled, autoInstallError });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
   // ---- GitHub ----
   // Resolve "owner/repo" from the actual git remote (origin), with GITHUB_REPO override.
   async function resolveGitHubRepo(execAsync: any): Promise<string> {
