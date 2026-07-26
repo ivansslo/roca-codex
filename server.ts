@@ -8,7 +8,7 @@ import { runOrchestrator } from "./server/orchestrator";
 import { db } from "./server/db";
 import { initScheduler } from "./server/scheduler";
 import { createAuthMiddleware } from "./server/authMiddleware";
-import { toolImplementations } from "./server/tools";
+import { toolImplementations, sshExec } from "./server/tools";
 
 if (dns && dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder('ipv4first');
@@ -440,6 +440,48 @@ async function startServer() {
     ];
     const providers = checks.map(c => ({ name: c.name, status: c.keys.some(k => process.env[k]) ? "valid" : "missing" }));
     res.json({ providers, checkedAt: new Date().toISOString() });
+  });
+
+  // ---- SSH Daemon (local device) config + exec ----
+  app.get("/api/ssh/config", (req, res) => {
+    res.json({
+      host: process.env.SSH_HOST || "127.0.0.1",
+      port: process.env.SSH_PORT || "8022",
+      user: process.env.SSH_USER || "",
+      password: process.env.SSH_PASSWORD ? "***" : "",
+      keyPath: process.env.SSH_KEY_PATH || "/storage/emulated/0/SshDaemon/ssh_host_rsa_key"
+    });
+  });
+
+  app.post("/api/ssh/config", async (req, res) => {
+    try {
+      const { host, port, user, password, keyPath } = req.body || {};
+      const envPath = path.join(process.cwd(), ".env");
+      let lines = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf-8").split("\n") : [];
+      const setEnv = (key: string, value: string) => {
+        if (value === undefined || value === "***") return;
+        process.env[key] = value;
+        const idx = lines.findIndex(l => new RegExp(`^\\s*${key}\\s*=`).test(l));
+        if (idx >= 0) lines[idx] = `${key}=${value}`;
+        else lines.push(`${key}=${value}`);
+      };
+      setEnv("SSH_HOST", String(host ?? ""));
+      setEnv("SSH_PORT", String(port ?? ""));
+      setEnv("SSH_USER", String(user ?? ""));
+      setEnv("SSH_PASSWORD", String(password ?? ""));
+      setEnv("SSH_KEY_PATH", String(keyPath ?? ""));
+      fs.writeFileSync(envPath, lines.join("\n").replace(/\n{3,}/g, "\n\n") + "\n", "utf-8");
+      try { dotenv.config({ override: true }); } catch {}
+      res.json({ success: true, message: "SSH config disimpan & dimuat ulang" });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post("/api/ssh/exec", async (req, res) => {
+    try {
+      const command = String(req.body?.command || "");
+      const r = await sshExec(command);
+      res.json(r);
+    } catch (err: any) { res.status(500).json({ status: "error", error: err.message }); }
   });
 
   // ---- GitHub ----

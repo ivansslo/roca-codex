@@ -82,6 +82,44 @@ export async function executeTool(toolName: string, args: any, onToolProgress?: 
   return await impl(cleanArgs);
 }
 
+// SSH execution via ssh2 (connects to local device's ssh-daemon). Config: SSH_HOST/SSH_PORT/SSH_USER/SSH_PASSWORD/SSH_KEY_PATH.
+export async function sshExec(command: string): Promise<{ status: string; stdout: string; stderr: string; error?: string }> {
+  const { Client } = await import('ssh2') as any;
+  const host = process.env.SSH_HOST || "127.0.0.1";
+  const port = parseInt(process.env.SSH_PORT || "8022", 10);
+  const username = process.env.SSH_USER || "";
+  const password = process.env.SSH_PASSWORD || "";
+  const keyPath = process.env.SSH_KEY_PATH || "";
+  if (!username) return { status: "error", stdout: "", stderr: "", error: "SSH_USER belum dikonfigurasi (Settings → SSH)." };
+  if (!command) return { status: "error", stdout: "", stderr: "", error: "command kosong" };
+
+  const creds: any = {};
+  if (password) creds.password = password;
+  else if (keyPath) {
+    try { creds.privateKey = fs.readFileSync(keyPath); }
+    catch (e: any) { return { status: "error", stdout: "", stderr: "", error: `Tidak bisa baca key ${keyPath}: ${e.message}` }; }
+  } else {
+    return { status: "error", stdout: "", stderr: "", error: "SSH_PASSWORD atau SSH_KEY_PATH belum dikonfigurasi." };
+  }
+
+  return new Promise((resolve) => {
+    const conn = new Client();
+    let stdout = "", stderr = "", done = false;
+    const finish = (r: any) => { if (!done) { done = true; try { conn.end(); } catch {} resolve(r); } };
+    const timer = setTimeout(() => finish({ status: "error", stdout, stderr, error: "SSH timeout (20s)" }), 20000);
+    conn.on("ready", () => {
+      conn.exec(command, (err: any, stream: any) => {
+        if (err) return finish({ status: "error", stdout, stderr, error: err.message });
+        stream.on("data", (d: any) => { stdout += d.toString(); });
+        stream.on("stderr", (d: any) => { stderr += d.toString(); });
+        stream.on("close", () => { clearTimeout(timer); finish({ status: "success", stdout, stderr }); });
+      });
+    });
+    conn.on("error", (e: any) => { clearTimeout(timer); finish({ status: "error", stdout, stderr, error: e.message }); });
+    conn.connect({ host, port, username, ...creds, readyTimeout: 15000 });
+  });
+}
+
 export const toolImplementations: Record<string, Function> = {
   list_project_files: async () => {
     try {
@@ -599,5 +637,12 @@ export const toolImplementations: Record<string, Function> = {
       commit: { stdout: commit.stdout, stderr: commit.stderr },
       push: { stdout: push.stdout, stderr: push.stderr }
     };
+  },
+
+  // Run a command on the LOCAL DEVICE via its SSH daemon (jazzm0/ssh-daemon / SimpleSSHD).
+  // Configured in Settings → SSH. Returns REAL stdout/stderr.
+  ssh_run: async (args: { command: string }) => {
+    const cmd = unescapeHtml(args.command || "");
+    return await sshExec(cmd);
   }
 };

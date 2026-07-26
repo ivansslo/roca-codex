@@ -307,6 +307,17 @@ const DEFAULT_SCHEMA: DatabaseSchema = {
         },
         required: ["action"]
       }
+    },
+    {
+      name: "ssh_run",
+      description: "Run a command on the LOCAL DEVICE through its SSH daemon (configured in Settings → SSH: port/user/password or key). Use to inspect/control the device itself when the user asks about the local machine (e.g. netstat, ps, files under /sdcard). Returns REAL stdout/stderr.",
+      parameters: {
+        type: "object",
+        properties: {
+          command: { type: "string", description: "Shell command to run on the device over SSH." }
+        },
+        required: ["command"]
+      }
     }
   ],
   logs: [],
