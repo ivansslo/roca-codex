@@ -50,7 +50,7 @@ function fallbackCopy(text: string): boolean {
   }
 }
 
-// CodeBlock matching Image 2 & Image 4 with Line Numbers, Copy & Download buttons
+// CodeBlock with Line Numbers, Copy & Download buttons
 function CodeBlock({ language, value, filename }: { language: string; value: string; filename?: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -62,19 +62,8 @@ function CodeBlock({ language, value, filename }: { language: string; value: str
 
   const handleDownload = () => {
     const extMap: Record<string, string> = {
-      typescript: 'ts',
-      ts: 'ts',
-      tsx: 'tsx',
-      javascript: 'js',
-      js: 'js',
-      jsx: 'jsx',
-      python: 'py',
-      py: 'py',
-      bash: 'sh',
-      sh: 'sh',
-      json: 'json',
-      html: 'html',
-      css: 'css'
+      typescript: 'ts', ts: 'ts', tsx: 'tsx', javascript: 'js', js: 'js', jsx: 'jsx',
+      python: 'py', py: 'py', bash: 'sh', sh: 'sh', json: 'json', html: 'html', css: 'css'
     };
     const cleanLang = (language || '').toLowerCase().trim();
     const ext = extMap[cleanLang] || 'txt';
@@ -92,7 +81,6 @@ function CodeBlock({ language, value, filename }: { language: string; value: str
 
   return (
     <div className="bg-slate-950 border border-slate-800 rounded-xl my-3 overflow-hidden shadow-2xl font-mono text-xs">
-      {/* Code Header Bar matching Image 2 */}
       <div className="flex items-center justify-between px-3.5 py-2 bg-slate-900/90 border-b border-slate-800 select-none">
         <div className="flex items-center gap-2 min-w-0">
           <FileCode size={15} className="text-indigo-400 flex-shrink-0" />
@@ -123,15 +111,12 @@ function CodeBlock({ language, value, filename }: { language: string; value: str
         </div>
       </div>
 
-      {/* Code Body with Line Numbers matching Image 2 */}
       <div className="flex overflow-x-auto leading-relaxed select-text bg-slate-950 max-h-96">
-        {/* Line Numbers Column */}
         <div className="py-3 px-2.5 bg-slate-900/40 text-slate-600 text-[11px] font-mono select-none text-right border-r border-slate-800/80 flex flex-col min-w-[2.5rem]">
           {lines.map((_, i) => (
             <span key={i} className="leading-5">{i + 1}</span>
           ))}
         </div>
-        {/* Code Lines */}
         <pre className="p-3 text-xs font-mono text-slate-100 leading-5 overflow-x-auto flex-1 bg-slate-950">
           <code>{value}</code>
         </pre>
@@ -140,16 +125,79 @@ function CodeBlock({ language, value, filename }: { language: string; value: str
   );
 }
 
-// Diff Card view matching Image 1 (`</> rocagents/src/App.tsx   +1 -1`)
+// Direct Bash / Terminal Execution Card (Codex CLI / Codex Web style — directly visible in chat)
+function BashExecutionCard({ log }: { log: any }) {
+  const command = log.args?.command || log.args?.cmd || '';
+  const stdout = log.result?.stdout ? String(log.result.stdout).trim() : '';
+  const stderr = log.result?.stderr ? String(log.result.stderr).trim() : '';
+  const exitCode = log.result?.exitCode !== undefined ? log.result.exitCode : (log.result?.status === 'error' ? 2 : 0);
+  const isError = exitCode !== 0 || log.result?.status === 'error';
+  const durationStr = formatDuration(log.timeMs);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyCmd = async () => {
+    await copyToClipboard(command);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="bg-slate-950 border border-slate-800/90 rounded-xl my-2.5 overflow-hidden shadow-2xl font-mono text-xs max-w-3xl">
+      {/* Header */}
+      <div className="flex items-center justify-between px-3.5 py-2 bg-slate-900/90 border-b border-slate-800 text-slate-300">
+        <div className="flex items-center gap-2 truncate pr-2 min-w-0">
+          <Terminal size={14} className={isError ? "text-red-400" : "text-emerald-400"} />
+          <span className="text-slate-400 text-[11px] font-bold">Terminal $</span>
+          <span className="font-bold text-slate-100 text-[12px] truncate">{command || 'bash'}</span>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {isError ? (
+            <span className="flex items-center gap-1 text-red-400 text-[10px] font-bold px-2 py-0.5 rounded bg-red-950/50 border border-red-800/60">
+              <XCircle size={12} />
+              <span>exit {exitCode}</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950/50 border border-emerald-800/60">
+              <CheckCircle2 size={12} />
+              <span>exit 0</span>
+            </span>
+          )}
+          <span className="text-[10px] text-slate-500 hidden sm:inline">{durationStr}</span>
+          <button
+            type="button"
+            onClick={handleCopyCmd}
+            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
+            title="Copy command"
+          >
+            {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+          </button>
+        </div>
+      </div>
+
+      {/* Terminal Output */}
+      <div className="p-3 bg-black/80 font-mono text-[11px] leading-relaxed max-h-72 overflow-y-auto space-y-1">
+        {stdout && (
+          <pre className="whitespace-pre-wrap text-emerald-300 font-mono">{stdout}</pre>
+        )}
+        {stderr && (
+          <pre className="whitespace-pre-wrap text-red-400 font-mono">{stderr}</pre>
+        )}
+        {!stdout && !stderr && (
+          <div className="text-slate-500 italic text-[10px]">(process completed without output)</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Diff Card view
 function FileDiffCard({ filename, content }: { filename: string; content: string }) {
-  const shortFilename = filename.split('/').pop() || filename;
   const lines = content.split('\n');
   const addedLines = lines.filter(l => l.startsWith('+') || !l.startsWith('-')).length;
   const removedLines = lines.filter(l => l.startsWith('-')).length;
 
   return (
     <div className="bg-slate-950 border border-slate-800/90 rounded-2xl my-2.5 overflow-hidden shadow-2xl font-mono text-xs animate-fade-in">
-      {/* Header matching Image 1: </> rocagents/src/App.tsx   +1 -1 */}
       <div className="flex items-center justify-between px-3.5 py-2.5 bg-slate-900/90 border-b border-slate-800/80">
         <div className="flex items-center gap-2 truncate pr-2">
           <FileCode size={15} className="text-indigo-400 flex-shrink-0" />
@@ -161,7 +209,6 @@ function FileDiffCard({ filename, content }: { filename: string; content: string
         </div>
       </div>
 
-      {/* Diff Code Container */}
       <div className="p-3 bg-slate-950/90 font-mono text-xs leading-relaxed overflow-x-auto max-h-72">
         {lines.map((line, idx) => {
           const isAdded = line.startsWith('+');
@@ -185,13 +232,17 @@ function FileDiffCard({ filename, content }: { filename: string; content: string
   );
 }
 
-// Single Execution Tool Card matching Latest Screenshots
+// Single Execution Tool Card
 function ExecutionCard({ log }: { log: any }) {
   const [expanded, setExpanded] = useState(true);
 
   const isWriteFile = log.toolName === 'write_project_file' || log.toolName === 'create_file';
   const isReadFile = log.toolName === 'read_project_file' || log.toolName === 'read_file';
   const isBash = log.toolName === 'run_bash_command' || log.toolName === 'shell';
+
+  if (isBash) {
+    return <BashExecutionCard log={log} />;
+  }
 
   const filename = log.args?.filename || log.args?.path || 'file';
   const shortFilename = filename.split('/').pop() || filename;
@@ -203,29 +254,12 @@ function ExecutionCard({ log }: { log: any }) {
 
   return (
     <div className="space-y-1.5 font-mono text-xs select-none">
-      {/* Step Header Bar matching Screenshots: used Bash ❌ exit 2 110ms ^ or used Bash ✓ 2.3s v */}
       <div 
         onClick={() => setExpanded(!expanded)}
         className="flex items-center justify-between py-1.5 px-2.5 bg-slate-900/60 hover:bg-slate-900 border border-slate-800/80 rounded-lg text-slate-300 text-xs cursor-pointer select-none transition-colors"
       >
         <div className="flex items-center gap-2 truncate pr-2">
-          {isBash ? (
-            <>
-              <span className="p-0.5 rounded bg-slate-950 border border-slate-800 text-slate-400">
-                <Terminal size={12} className={isError ? "text-red-400" : "text-emerald-400"} />
-              </span>
-              <span className="font-semibold text-slate-200">used Bash</span>
-              {isError ? (
-                <span className="flex items-center gap-1 text-red-400 text-[11px] font-bold">
-                  <XCircle size={13} />
-                  <span>exit {exitCode}</span>
-                </span>
-              ) : (
-                <CheckCircle2 size={13} className="text-emerald-400 font-bold" />
-              )}
-              <span className="text-[11px] text-slate-500 font-sans">{durationStr}</span>
-            </>
-          ) : isReadFile ? (
+          {isReadFile ? (
             <>
               <Eye size={13} className="text-indigo-400" />
               <span className="text-slate-400">Read</span>
@@ -233,72 +267,30 @@ function ExecutionCard({ log }: { log: any }) {
             </>
           ) : isWriteFile ? (
             <>
-              <span className="text-indigo-400 font-bold">Edit</span>
-              <span className="font-mono text-[12px] font-bold text-slate-50 truncate px-2 py-0.5 rounded-md bg-slate-800/90 border border-slate-600/70 shadow-sm">{filename}</span>
+              <FileCode size={13} className="text-indigo-400" />
+              <span className="text-slate-400">Write</span>
+              <span className="font-mono text-[12px] font-bold text-slate-50">{shortFilename}</span>
             </>
           ) : (
             <>
-              <FileCode size={13} className="text-indigo-400" />
-              <span className="font-semibold text-slate-200">{log.toolName}</span>
+              <Wrench size={13} className="text-indigo-400" />
+              <span className="font-bold text-slate-200">{log.toolName}</span>
             </>
           )}
         </div>
-
-        <button type="button" className="text-slate-400 hover:text-slate-200 p-0.5 flex-shrink-0 flex items-center gap-1">
-          {expanded ? (
-            <>
-              <Eye size={13} className="text-indigo-400" />
-              <ChevronUp size={14} />
-            </>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {isError ? (
+            <XCircle size={13} className="text-red-400 font-bold" />
           ) : (
-            <>
-              <EyeOff size={13} className="text-slate-500" />
-              <ChevronDown size={14} />
-            </>
+            <CheckCircle2 size={13} className="text-emerald-400 font-bold" />
           )}
-        </button>
+          <span className="text-[10px] text-slate-500">{durationStr}</span>
+          <ChevronDown size={12} className={`text-slate-500 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </div>
       </div>
 
-      {/* If tool call is actively running in real-time (no result returned yet) */}
-      {!log.result && (
-        <div className="flex items-center justify-between py-2 px-3 bg-slate-900/90 border border-amber-500/50 rounded-xl text-amber-300 text-xs animate-pulse shadow-md my-1.5">
-          <div className="flex items-center gap-2 truncate pr-2">
-            <Terminal size={14} className="animate-spin text-amber-400 flex-shrink-0" />
-            <span className="font-bold">Running {log.toolName}...</span>
-            {command && <span className="text-slate-300 font-mono truncate text-[11px]">$ {command}</span>}
-          </div>
-          <span className="text-[10px] font-mono bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/30 text-amber-200 font-bold flex-shrink-0">RUNNING ⚡</span>
-        </div>
-      )}
-
-      {/* Expanded Step Body with COMMAND and STDERR/STDOUT boxes matching Image 2 */}
-      {expanded && log.result && (
-        <div className="pl-3 border-l-2 border-indigo-500/30 space-y-2 py-1">
-          {/* COMMAND Box with Top-Right Copy Button */}
-          {command && (
-            <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950 font-mono text-xs my-2">
-              <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900/80 border-b border-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                <span>COMMAND</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    copyToClipboard(command);
-                    alert("Command copied to clipboard!");
-                  }}
-                  className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
-                  title="Copy command"
-                >
-                  <Copy size={12} />
-                </button>
-              </div>
-              <pre className="p-3 text-[11px] text-slate-200 overflow-x-auto whitespace-pre-wrap leading-relaxed">
-                <span className="text-emerald-400 font-bold">$ </span>
-                <span>{command}</span>
-              </pre>
-            </div>
-          )}
-
-          {/* Read File Content Box */}
+      {expanded && (
+        <div className="pl-2 space-y-2 border-l-2 border-slate-800/80 my-1">
           {isReadFile && log.result?.content && (
             <CodeBlock 
               language={filename.split('.').pop() || 'txt'} 
@@ -307,111 +299,14 @@ function ExecutionCard({ log }: { log: any }) {
             />
           )}
 
-          {/* List Project Files Box */}
-          {log.toolName === 'list_project_files' && log.result?.files && (
-            <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950 font-mono text-xs my-2 p-3 space-y-2">
-              <div className="flex items-center justify-between text-indigo-300 font-bold text-[11px] border-b border-slate-800 pb-1.5">
-                <span>📂 Workspace Files ({log.result.files.length} items)</span>
-                <span className="text-slate-500 font-normal">ROOT WORKSPACE</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-60 overflow-y-auto pt-1">
-                {log.result.files.map((file: string, idx: number) => (
-                  <div key={idx} className="flex items-center gap-2 p-1.5 rounded-lg bg-slate-900/80 border border-slate-800/80 text-slate-200 text-[11px]">
-                    <FileCode size={13} className="text-indigo-400 flex-shrink-0" />
-                    <span className="truncate">{file}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Search Codebase Results Box */}
-          {log.toolName === 'search_codebase' && log.result?.results && (
-            <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950 font-mono text-xs my-2 p-3 space-y-2">
-              <div className="text-indigo-300 font-bold text-[11px] border-b border-slate-800 pb-1.5">
-                🔍 Codebase Search Matches ({log.result.results.length} results)
-              </div>
-              <div className="space-y-1.5 max-h-60 overflow-y-auto pt-1">
-                {log.result.results.map((item: any, idx: number) => (
-                  <div key={idx} className="p-2 bg-slate-900/80 border border-slate-800 rounded-lg text-[11px]">
-                    <div className="flex items-center justify-between text-indigo-400 font-bold mb-1">
-                      <span>{item.filename}:{item.line}</span>
-                    </div>
-                    <code className="text-slate-300 block bg-slate-950 p-1.5 rounded border border-slate-800/60 font-mono text-[10px] overflow-x-auto">
-                      {item.match}
-                    </code>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {isWriteFile && content && (
             <FileDiffCard filename={filename} content={content} />
           )}
 
-          {/* STDOUT Box with Top-Right Copy Button */}
-          {log.result?.stdout && !content && (
-            <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950 font-mono text-xs my-2">
-              <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900/80 border-b border-slate-800 text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
-                <span>STDOUT</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    copyToClipboard(log.result.stdout);
-                    alert("STDOUT copied to clipboard!");
-                  }}
-                  className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
-                  title="Copy stdout"
-                >
-                  <Copy size={12} />
-                </button>
-              </div>
-              <pre className="p-3 text-[11px] font-mono text-emerald-300 overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-48">
-                {log.result.stdout}
-              </pre>
-            </div>
-          )}
-
-          {/* STDERR Box with Top-Right Copy Button matching Image 2 */}
-          {log.result?.stderr && (
-            <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950 font-mono text-xs my-2">
-              <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900/80 border-b border-slate-800 text-[10px] font-bold text-red-400 uppercase tracking-wider">
-                <span>STDERR</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    copyToClipboard(log.result.stderr);
-                    alert("STDERR copied to clipboard!");
-                  }}
-                  className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
-                  title="Copy stderr"
-                >
-                  <Copy size={12} />
-                </button>
-              </div>
-              <pre className="p-3 text-[11px] font-mono text-red-300 overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-48">
-                {log.result.stderr}
-              </pre>
-            </div>
-          )}
-
-          {/* Generic JSON / Tool Result Message fallback */}
-          {!isBash && !isWriteFile && !isReadFile && log.toolName !== 'list_project_files' && log.toolName !== 'search_codebase' && log.result && (
+          {!isReadFile && !isWriteFile && log.result && (
             <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950 font-mono text-xs my-2">
               <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900/80 border-b border-slate-800 text-[10px] font-bold text-indigo-300 uppercase tracking-wider">
-                <span>TOOL RESULT</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    copyToClipboard(JSON.stringify(log.result, null, 2));
-                    alert("Result copied to clipboard!");
-                  }}
-                  className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
-                  title="Copy result JSON"
-                >
-                  <Copy size={12} />
-                </button>
+                <span>RESULT</span>
               </div>
               <pre className="p-3 text-[11px] text-slate-200 overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-48">
                 {typeof log.result === 'string' ? log.result : JSON.stringify(log.result, null, 2)}
@@ -424,18 +319,17 @@ function ExecutionCard({ log }: { log: any }) {
   );
 }
 
-// Collapsible Group Container matching Screenshots 1 & 2
+// Collapsible Group Container
 function ExecutionLogsGroup({ logs }: { logs: any[] }) {
-  // Tools run silently by default: data is KEPT (in message.logs) but hidden; one Show button reveals it.
-  const [shown, setShown] = useState(false);
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [shown, setShown] = useState(true); // Open by default so tool executions show directly
+  const [openKey, setOpenKey] = useState<string | null>('bash');
 
   if (!Array.isArray(logs) || logs.length === 0) return null;
 
   const has = (...names: string[]) => logs.filter(l => names.includes(l?.toolName));
+  const bashLogs = has('run_bash_command', 'shell', 'terminal_manager');
   const readLogs = has('read_project_file', 'read_file');
   const editLogs = has('write_project_file', 'create_file', 'edit_file', 'edit_project_file');
-  const bashLogs = has('run_bash_command', 'shell', 'terminal_manager');
   const searchLogs = has('search_codebase');
   const webLogs = has('web_searching_module');
   const httpLogs = has('http_request');
@@ -444,45 +338,50 @@ function ExecutionLogsGroup({ logs }: { logs: any[] }) {
   const otherLogs = logs.filter(l => !used.has(l));
 
   const groups = [
-    { key: 'read', label: 'Read', Icon: Eye, color: 'text-sky-400', logs: readLogs },
-    { key: 'edit', label: 'Edit', Icon: FileCode, color: 'text-indigo-400', logs: editLogs },
-    { key: 'bash', label: 'Bash', Icon: Terminal, color: 'text-emerald-400', logs: bashLogs },
-    { key: 'search', label: 'Search', Icon: Search, color: 'text-amber-400', logs: searchLogs },
-    { key: 'web', label: 'Web', Icon: Globe, color: 'text-cyan-400', logs: webLogs },
-    { key: 'http', label: 'HTTP', Icon: Globe, color: 'text-fuchsia-400', logs: httpLogs },
-    { key: 'model', label: 'Model', Icon: Sparkles, color: 'text-purple-400', logs: modelLogs },
-    { key: 'other', label: 'Lainnya', Icon: FileCode, color: 'text-slate-400', logs: otherLogs },
+    { key: 'bash', label: 'Terminal Executions', Icon: Terminal, color: 'text-emerald-400', logs: bashLogs },
+    { key: 'read', label: 'Read Files', Icon: Eye, color: 'text-sky-400', logs: readLogs },
+    { key: 'edit', label: 'Edit Files', Icon: FileCode, color: 'text-indigo-400', logs: editLogs },
+    { key: 'search', label: 'Search Code', Icon: Search, color: 'text-amber-400', logs: searchLogs },
+    { key: 'web', label: 'Web Search', Icon: Globe, color: 'text-cyan-400', logs: webLogs },
+    { key: 'http', label: 'HTTP Requests', Icon: Globe, color: 'text-fuchsia-400', logs: httpLogs },
+    { key: 'model', label: 'Model Cascading', Icon: Sparkles, color: 'text-purple-400', logs: modelLogs },
+    { key: 'other', label: 'Other Tools', Icon: FileCode, color: 'text-slate-400', logs: otherLogs },
   ].filter(g => g.logs.length > 0);
 
   const total = logs.length;
 
   return (
     <div className="mt-3 space-y-2 font-mono text-xs animate-fade-in select-none">
-      <button
-        type="button"
-        onClick={() => setShown(s => !s)}
-        className="flex items-center gap-2 w-full p-2 px-3 rounded-xl border border-slate-700/70 bg-slate-900/70 hover:bg-slate-800/80 hover:border-slate-600 text-slate-300 hover:text-white transition-all cursor-pointer"
-        title={shown ? "Sembunyikan aktivitas tool" : "Tampilkan aktivitas tool"}
-      >
-        <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-indigo-500/15 border border-indigo-500/25 flex-shrink-0">
-          <Wrench size={13} className={shown ? "text-indigo-300" : "text-slate-400"} />
-        </span>
-        <span className="font-bold text-slate-100">{total} tool{total > 1 ? 's' : ''} dijalankan</span>
-        <span className="hidden sm:flex items-center gap-1 ml-1 overflow-hidden flex-wrap">
-          {groups.map(g => (
-            <span key={g.key} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-800/80 border border-slate-700/60 text-[9px] font-bold ${g.color}`} title={`${g.label}: ${g.logs.length}`}>
-              <g.Icon size={9} />{g.logs.length}
-            </span>
+      {/* If there are bash executions, render them directly in chat stream! */}
+      {bashLogs.length > 0 && (
+        <div className="space-y-2">
+          {bashLogs.map((log, i) => (
+            <BashExecutionCard key={i} log={log} />
           ))}
-        </span>
-        <span className={`ml-auto flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider flex-shrink-0 ${shown ? 'text-indigo-300' : 'text-slate-500'}`}>
-          {shown ? (<><ChevronUp size={12} /> Sembunyikan</>) : (<><ChevronDown size={12} /> Tampilkan</>)}
-        </span>
-      </button>
+        </div>
+      )}
 
-      {shown && (
+      {/* Group summary toggle for all tool activity */}
+      {groups.filter(g => g.key !== 'bash' || bashLogs.length === 0).length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShown(s => !s)}
+          className="flex items-center gap-2 w-full p-2 px-3 rounded-xl border border-slate-700/70 bg-slate-900/70 hover:bg-slate-800/80 hover:border-slate-600 text-slate-300 hover:text-white transition-all cursor-pointer"
+          title={shown ? "Sembunyikan aktivitas tool" : "Tampilkan aktivitas tool"}
+        >
+          <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-indigo-500/15 border border-indigo-500/25 flex-shrink-0">
+            <Wrench size={13} className={shown ? "text-indigo-300" : "text-slate-400"} />
+          </span>
+          <span className="font-bold text-slate-100">{total} tool{total > 1 ? 's' : ''} dijalankan</span>
+          <span className={`ml-auto flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider flex-shrink-0 ${shown ? 'text-indigo-300' : 'text-slate-500'}`}>
+            {shown ? (<><ChevronUp size={12} /> Sembunyikan</>) : (<><ChevronDown size={12} /> Tampilkan</>)}
+          </span>
+        </button>
+      )}
+
+      {shown && groups.filter(g => g.key !== 'bash').length > 0 && (
         <div className="space-y-1.5 pl-1">
-          {groups.map(g => {
+          {groups.filter(g => g.key !== 'bash').map(g => {
             const open = openKey === g.key;
             return (
               <div key={g.key} className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/70">
@@ -512,7 +411,7 @@ function ExecutionLogsGroup({ logs }: { logs: any[] }) {
   );
 }
 
-// Clean, elegant Thinking Indicator (Codex App / modern AI style)
+// Thinking Indicator
 function ThinkingIndicator({ statusMessage }: { statusMessage?: string }) {
   const [dots, setDots] = useState('');
 
@@ -547,7 +446,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const [copiedMessage, setCopiedMessage] = useState(false);
 
-  // Copy Chat Message Handler matching Image 3 & Frame 028
+  // Copy Chat Message Handler
   const handleCopyMessage = async () => {
     if (message.text) {
       await copyToClipboard(message.text);
@@ -558,21 +457,43 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
   return (
     <div className={`flex w-full mb-8 group animate-fade-in justify-start`}>
-      <div className={`flex flex-col max-w-4xl min-w-0 items-start`}>
-        {/* Message Header (Sender Name) - Minimalist style */}
-        <div className={`flex items-center gap-2 mb-1 px-1 select-none flex-row`}>
-          <span className="text-[10px] font-bold text-theme-text-muted uppercase tracking-widest opacity-80 group-hover:opacity-100 transition-opacity">
-            {isUser ? 'You' : 'Codex AI'}
-          </span>
-          {!isUser && (
-            <span className="h-1 w-1 rounded-full bg-indigo-500 animate-pulse" />
+      <div className={`flex flex-col max-w-4xl min-w-0 items-start w-full`}>
+        {/* Message Header (Sender Name) */}
+        <div className={`flex items-center justify-between w-full mb-1 px-1 select-none`}>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-theme-text-muted uppercase tracking-widest opacity-80 group-hover:opacity-100 transition-opacity">
+              {isUser ? 'You' : 'Codex AI'}
+            </span>
+            {!isUser && (
+              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
+            )}
+          </div>
+
+          {/* Copy Chat Button on EVERY message header (User and AI) */}
+          {message.text && (
+            <button
+              type="button"
+              onClick={handleCopyMessage}
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800/80 text-slate-400 hover:text-slate-100 text-[10px] font-mono transition-all cursor-pointer shadow-xs"
+              title="Copy chat text"
+            >
+              {copiedMessage ? (
+                <>
+                  <Check size={11} className="text-emerald-400 font-bold" />
+                  <span className="text-emerald-400 font-bold">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy size={11} />
+                  <span>Copy Chat</span>
+                </>
+              )}
+            </button>
           )}
         </div>
 
-        {/* Message Content Container - "Polos" (Plain) without boxes */}
-        <div className={`relative flex flex-col gap-2 min-w-0 text-theme-text-primary px-1 py-0.5 ${
-          'text-left'
-        }`}>
+        {/* Message Content Container */}
+        <div className="relative flex flex-col gap-2 min-w-0 text-theme-text-primary px-1 py-0.5 w-full text-left">
           
           {/* Uploaded Attachments */}
           {message.image && (
@@ -587,7 +508,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
           )}
 
           {message.file && (
-            <div className={`flex items-center gap-2.5 mb-1 max-w-md mr-auto`}>
+            <div className="flex items-center gap-2.5 mb-1 max-w-md mr-auto">
               <div className="p-1.5 text-indigo-400 rounded-lg flex-shrink-0">
                 <FileText size={16} />
               </div>
@@ -600,9 +521,16 @@ export function ChatMessage({ message }: ChatMessageProps) {
             </div>
           )}
 
-          {/* High-Contrast Markdown Text Body - Clean and Direct */}
+          {/* Direct Terminal Execution Cards in Chat Stream */}
+          {message.logs && message.logs.length > 0 && (
+            <div className="w-full max-w-3xl my-1">
+              <ExecutionLogsGroup logs={message.logs} />
+            </div>
+          )}
+
+          {/* High-Contrast Markdown Text Body */}
           {message.text && (
-            <div className={`prose dark:prose-invert prose-sm sm:prose-base max-w-none text-theme-text-primary break-words leading-relaxed text-left`}>
+            <div className="prose dark:prose-invert prose-sm sm:prose-base max-w-none text-theme-text-primary break-words leading-relaxed text-left">
               <Markdown
                 components={{
                   code({ node, className, children, ...props }) {
@@ -622,36 +550,9 @@ export function ChatMessage({ message }: ChatMessageProps) {
             </div>
           )}
 
-          {/* Actions Bar - Subtle hover actions */}
-          <div className={`flex items-center gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity justify-start`}>
-            {message.text && (
-              <button
-                type="button"
-                onClick={handleCopyMessage}
-                className="p-1 rounded text-theme-text-muted hover:text-indigo-400 transition-colors cursor-pointer"
-                title="Copy message"
-              >
-                {copiedMessage ? (
-                  <Check size={12} className="text-emerald-400" />
-                ) : (
-                  <Copy size={12} />
-                )}
-              </button>
-            )}
-          </div>
-
-          {/* Execution Output Group */}
-          {message.logs && message.logs.length > 0 && (
-            <div className={`w-full `}>
-              <div className="w-full max-w-2xl">
-                <ExecutionLogsGroup logs={message.logs} />
-              </div>
-            </div>
-          )}
-
           {/* Thinking Indicator */}
           {message.isTyping && (
-            <div className={''}>
+            <div>
               <ThinkingIndicator statusMessage={message.statusMessage} />
             </div>
           )}
