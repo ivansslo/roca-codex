@@ -149,14 +149,16 @@ function getServerEnvironmentContext(): string {
   const hostname = os.hostname();
   const nodeVersion = process.version;
   const cwd = process.cwd();
-  const envType = isTermux ? "Termux (Android)" : `${platform} ${arch} (${release})`;
+  const envType = isTermux ? "Termux (Android Localhost)" : `${platform} ${arch} (${release})`;
 
   return `## Server Environment Awareness\n` +
     `- Host OS/Environment: **${envType}** (Hostname: \`${hostname}\`)\n` +
     `- Node.js Version: \`${nodeVersion}\` | Working Directory: \`${cwd}\`\n` +
+    `- Localhost Network Ports: \`127.0.0.1:3000\` (Web Server / SSE), \`127.0.0.1:8022\` / \`2222\` (Local Device SSH Daemon)\n` +
+    `- Termux Binary PATH: \`/data/data/com.termux/files/usr/bin\`\n` +
     `- Primary Source Repositories: **ivansslo/roca-codex** and **ivansslo/rocagents**\n` +
-    `- Ecosystem Synced Apps: **roc-webui** (https://github.com/ivansslo/roc-webui) & **roc-otoweb** (https://github.com/ivansslo/roc-otoweb)\n` +
-    `- Self Awareness: You are installed directly in this live server environment. You know your own source codebase, path, tools, and running process.`;
+    `- Ecosystem Synced Workspace Apps: **roc-webui** (\`roc-webui.zip\` / https://github.com/ivansslo/roc-webui) & **roc-otoweb** (\`roc-otoweb.zip\` / https://github.com/ivansslo/roc-otoweb)\n` +
+    `- Environment Awareness: You are running directly inside this server environment on Termux localhost. You know your local tools, bash shell, SSH daemon (\`ssh_run\`), app packaging (\`export_app_archive\`), and codebase.`;
 }
 
 function buildSystemPrompt(personaId: string | undefined, extraContext?: string, recentMessages?: any[], activeFile?: string): string {
