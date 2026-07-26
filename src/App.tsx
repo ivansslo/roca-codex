@@ -10,6 +10,7 @@ import { AiProviderValidator } from './components/AiProviderValidator';
 import { EnvConfigModal } from './components/EnvConfigModal';
 import { EnvEditor } from './components/EnvEditor';
 import { SshSettings } from './components/SshSettings';
+import { GitCredentials } from './components/GitCredentials';
 import { LoginGate } from './components/LoginGate';
 import { Toaster, toast } from './components/Toast';
 import { streamChat } from './lib/chatStream';
@@ -348,6 +349,7 @@ export default function App() {
                 <AiProviderValidator onStatusUpdated={setAiProviderHasError} onOpenEnvModal={() => setEnvModalOpen(true)} onOpenEnvEditor={() => setSettingsSection('general')} />
                 <EnvEditor isPro={isPro} userEmail={userEmail} onSaved={() => {}} />
                 <SshSettings />
+                <GitCredentials />
 
                 <div>
                   <h3 className="text-lg font-semibold mb-1 flex items-center gap-2 text-theme-text-primary"><MessageSquare size={20} className="text-indigo-500" /> Chat Settings</h3>

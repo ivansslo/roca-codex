@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { X, ShieldCheck, Eye, EyeOff, Copy, RefreshCw, Key, CheckCircle2, AlertTriangle, XCircle, Info, Database, Server, Cpu } from 'lucide-react';
+import { X, ShieldCheck, Eye, EyeOff, Copy, RefreshCw, Key, CheckCircle2, AlertTriangle, XCircle, Info, Database, Server, Cpu, ClipboardPaste, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { toast } from './Toast';
 
 interface EnvVarItem {
   key: string;
@@ -22,6 +23,29 @@ export const EnvConfigModal: React.FC<EnvConfigModalProps> = ({ onClose, onOpenE
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>('all');
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+  const [applying, setApplying] = useState(false);
+
+  const applyPaste = async () => {
+    const envs: { key: string; value: string }[] = [];
+    for (const line of pasteText.split('\n')) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
+      if (m) envs.push({ key: m[1], value: m[2].replace(/^["']|["']$/g, '').trim() });
+    }
+    if (envs.length === 0) { toast.error('Tidak ada baris KEY=VALUE terdeteksi'); return; }
+    setApplying(true);
+    try {
+      const res = await fetch('/api/env/update', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ envs })
+      });
+      const d = await res.json();
+      if (res.ok) { toast.success(`${envs.length} key disimpan ke .env`); setPasteText(''); setPasteOpen(false); fetchEnvConfig(); }
+      else toast.error(d.error || 'Gagal menyimpan');
+    } catch (e: any) { toast.error(e.message); }
+    setApplying(false);
+  };
 
   const fetchEnvConfig = async () => {
     setLoading(true);
@@ -109,13 +133,22 @@ export const EnvConfigModal: React.FC<EnvConfigModalProps> = ({ onClose, onOpenE
             </span>
           </div>
 
-          <button
-            onClick={fetchEnvConfig}
-            className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 transition-colors cursor-pointer"
-          >
-            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
-            Refresh Values
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPasteOpen(o => !o)}
+              className={`flex items-center gap-1.5 text-[11px] font-semibold transition-colors cursor-pointer px-2.5 py-1 rounded-lg border ${pasteOpen ? 'bg-indigo-600 text-white border-indigo-500' : 'text-indigo-400 hover:text-indigo-300 border-transparent hover:bg-theme-btn-hover'}`}
+            >
+              <ClipboardPaste size={12} />
+              Tempel .env
+            </button>
+            <button
+              onClick={fetchEnvConfig}
+              className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 transition-colors cursor-pointer"
+            >
+              <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+              Refresh Values
+            </button>
+          </div>
         </div>
 
         {/* Category Tabs */}
@@ -134,6 +167,30 @@ export const EnvConfigModal: React.FC<EnvConfigModalProps> = ({ onClose, onOpenE
             </button>
           ))}
         </div>
+
+        {/* Paste .env panel */}
+        {pasteOpen && (
+          <div className="px-5 py-4 border-b border-theme-border bg-indigo-500/5 space-y-2.5 animate-fade-in">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-theme-text-primary flex items-center gap-1.5"><ClipboardPaste size={13} className="text-indigo-400" /> Tempel .env (format KEY=VALUE, tiap baris)</span>
+              <button onClick={() => setPasteOpen(false)} className="text-theme-text-muted hover:text-theme-text-primary p-1 cursor-pointer"><ChevronUp size={14} /></button>
+            </div>
+            <textarea
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              placeholder={"GEMINI_API_KEY=...\nGROQ_KEY=...\nGITHUB_PAT=ghp_...\nSSH_PORT=8022"}
+              rows={6}
+              className="w-full bg-neutral-950/80 border border-neutral-800 rounded-lg p-3 text-xs font-mono text-slate-100 focus:ring-1 focus:ring-indigo-500 outline-none resize-y"
+            />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-theme-text-muted">Hanya baris <code>KEY=VALUE</code> yang diproses; key lain di .env tidak dihapus.</span>
+              <button onClick={applyPaste} disabled={applying || !pasteText.trim()} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-900 text-white text-xs font-bold rounded-lg cursor-pointer disabled:cursor-not-allowed">
+                {applying ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                {applying ? 'Menyimpan…' : 'Terapkan'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Modal Body: Env Var List */}
         <div className="flex-1 overflow-y-auto p-5 space-y-3">

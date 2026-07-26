@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Terminal, Save, Plug, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { toast } from './Toast';
+import { PasteInput } from './PasteInput';
 
 export function SshSettings() {
   const [host, setHost] = useState('127.0.0.1');
@@ -89,9 +90,9 @@ export function SshSettings() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="User" value={user} set={setUser} placeholder="ubuntu" />
-            <Field label="Password" value={password} set={setPassword} type="password" placeholder="(pakai key jika kosong)" />
+            <PasteInput label="Password" value={password} onChange={setPassword} type="password" placeholder="(pakai key jika kosong)" />
           </div>
-          <Field label="Path private key" value={keyPath} set={setKeyPath} placeholder="/storage/emulated/0/SshDaemon/ssh_host_rsa_key" />
+          <PasteInput label="Path private key" value={keyPath} onChange={setKeyPath} placeholder="/storage/emulated/0/SshDaemon/ssh_host_rsa_key" />
           <p className="text-[10px] text-theme-text-muted leading-relaxed">
             Password & key dipakai alternatif: isi <strong>password</strong> untuk auth password, atau kosongkan & isi <strong>path key</strong> untuk auth key. Pastikan ssh-daemon aktif di device.
           </p>

@@ -10,8 +10,19 @@
 - **Purge mock**: ~44 endpoint + 27 tool mock dibuang; OAuth GitHub dihapus; codex-web dihapus; SyncDashboard dirampingkan (hanya integrasi nyata).
 - **Endpoint .env nyata**: `/api/env/{config,status,update}` + git push/updates pakai remote asli.
 
-## Menjalankan
+## Instalasi (clone ke localhost)
 ```bash
+git clone https://github.com/ivansslo/roca-codex.git
+cd roca-codex
+cp .env.example .env          # lalu isi min. 1 API key (GEMINI_API_KEY / GROQ_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY)
+npm install --legacy-peer-deps
+npm run build                 # build frontend (dist/) + backend (dist/server.cjs)
+npm start                     # -> http://localhost:3000  (mode dev: npm run dev)
+```
+Karena ini hasil clone, `.git` & remote `origin` sudah ada → tombol **Pull/Push** dan tool `git` langsung bisa (setelah isi `GITHUB_PAT` di Pengaturan → Git).
+
+## Menjalankan
+```
 cp .env.example .env   # isi min. 1 API key (GEMINI_API_KEY / GROQ_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY)
 npm install --legacy-peer-deps
 npm run build && npm start   # -> http://localhost:3000
