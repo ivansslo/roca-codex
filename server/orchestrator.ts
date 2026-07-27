@@ -698,30 +698,44 @@ async function callCloudflare(messages: any[], modelName: string, executionLogs:
 
 // 6. OCI Local Model Provider (Upgraded to qwen2.5:7b)
 async function callOciModel(messages: any[], modelName: string, executionLogs: any[], onProgress?: Function, activeFile?: string) {
-  const endpoint = process.env.OCI_MODEL_ENDPOINT || "http://161.118.253.28:11434";
-  const model = modelName || "qwen2.5:7b";
+  const endpoint = process.env.OCI_MODEL_ENDPOINT || process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
+  const model = modelName || process.env.OCI_MODEL || "qwen2.5:7b";
 
   const reqMessages = [
     { role: "system", content: buildSystemPrompt(ACTIVE_PERSONA_ID, undefined, messages, activeFile) },
     ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
   ];
 
-  onProgress?.({ type: 'status', data: { message: `Connecting to OCI Local Model (${model})...` } });
+  onProgress?.({ type: 'status', data: { message: `Connecting to OCI / Ollama Local Model (${model} @ ${endpoint})...` } });
 
-  const resp = await robustFetch(`${endpoint}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      prompt: reqMessages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\n\n"),
-      stream: false,
-      options: { temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP }
-    })
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
 
-  const data = await resp.json();
-  onProgress?.({ type: 'chunk', data: { text: data.response || "" } });
-  return { text: data.response || "", logs: executionLogs };
+  try {
+    const resp = await fetch(`${endpoint}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model,
+        prompt: reqMessages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\n\n"),
+        stream: false,
+        options: { temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP }
+      })
+    });
+    clearTimeout(timer);
+
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const text = data.response || "";
+    if (!text.trim()) throw new Error("Empty response");
+
+    onProgress?.({ type: 'chunk', data: { text } });
+    return { text, logs: executionLogs };
+  } catch (err: any) {
+    clearTimeout(timer);
+    throw new Error(`OCI/Ollama Model (${endpoint}) offline: ${err?.name === 'AbortError' ? 'Timeout (4s)' : err.message}`);
+  }
 }
 
 // 7. AuroRa-x Personal Coding AI Engine (OCI High-Speed + Codex-Web Integration)
@@ -729,7 +743,7 @@ async function callAuroRaX(messages: any[], modelName: string, executionLogs: an
   onProgress?.({ type: 'status', data: { message: "Initializing AuroRa-x Personal Coding AI via Codex-Web..." } });
 
   try {
-    const endpoint = process.env.OCI_MODEL_ENDPOINT || "http://161.118.253.28:11434";
+    const endpoint = process.env.OCI_MODEL_ENDPOINT || process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
     const auroraPrompt = `You are AuroRa-x — Ivan Ssl's Personal Coding AI Engine.\n\n${OWNER_SYSTEM_PROMPT_BASE}`;
     
     const reqMessages = [
@@ -738,7 +752,7 @@ async function callAuroRaX(messages: any[], modelName: string, executionLogs: an
     ];
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1500);
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
 
     const resp = await fetch(`${endpoint}/api/generate`, {
       method: "POST",
@@ -938,12 +952,15 @@ async function callTurboFallback(_messages: any[], executionLogs: any[], onProgr
   if (process.env.GROQ_KEY || process.env.GROQ_API_KEY) configured.push("Groq");
   if (process.env.OPENROUTER_API_KEY || process.env.OR_KEY) configured.push("OpenRouter");
   if (process.env.OPENAI_API_KEY) configured.push("OpenAI");
+  const ociEndpoint = process.env.OCI_MODEL_ENDPOINT || process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
 
   const hint = configured.length
-    ? `Provider terkonfigurasi: **${configured.join(", ")}** — kemungkinan semua kehabisan kuota (429) atau API key tidak valid. Periksa file .env dan kuota di masing-masing dashboard, lalu coba lagi.`
-    : "Belum ada API key provider AI di `.env`. Isi minimal satu: `GEMINI_API_KEY`, `GROQ_KEY`, `OPENROUTER_API_KEY`, atau `OPENAI_API_KEY`, lalu restart server.";
+    ? `Provider Cloud terkonfigurasi: **${configured.join(", ")}** (semua mengalami 429 Rate Limit / Quota Exceeded) dan OCI/Ollama Local Model (${ociEndpoint}) offline.\n\n` +
+      `💡 **Solusi**: Periksa file \`.env\` atau jalankan Ollama/OCI lokal (\`ollama run qwen2.5:7b\`).`
+    : `Belum ada API key provider AI terkonfigurasi di \`.env\` dan OCI/Ollama lokal (${ociEndpoint}) offline.\n\n` +
+      `💡 **Solusi**: Isi salah satu API Key di \`.env\` (\`GEMINI_API_KEY\`, \`GROQ_KEY\`, \`OPENROUTER_API_KEY\`, \`OPENAI_API_KEY\`) atau aktifkan Ollama lokal (\`ollama run qwen2.5:7b\`).`;
 
-  const text = `⚠️ **Tidak ada provider AI yang bisa menjawab saat ini.**\n\n${hint}`;
+  const text = `⚠️ **Tidak ada provider AI (Cloud/OCI) yang dapat merespons saat ini.**\n\n${hint}`;
   onProgress?.({ type: 'chunk', data: { text } });
   return { text, logs: executionLogs };
 }
