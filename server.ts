@@ -45,6 +45,7 @@ async function startServer() {
       { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Fast)", provider: "gemini", icon: "⚡", active: true },
       { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Reasoning)", provider: "gemini", icon: "🧠", active: true },
       { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "gemini", icon: "⚡", active: true },
+      { id: "qwen2.5:7b", name: "Qwen 2.5 7B (Local OCI/Ollama)", provider: "oci", icon: "🦙", active: true },
       { id: "llama-3.3-70b-versatile", name: "Groq Llama 3.3 70B", provider: "groq", icon: "⚡", active: true },
       { id: "gpt-4o", name: "OpenAI GPT-4o", provider: "openai", icon: "🟢", active: true },
       { id: "gpt-4o-mini", name: "OpenAI GPT-4o mini", provider: "openai", icon: "🟢", active: true },
