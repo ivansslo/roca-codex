@@ -2,11 +2,11 @@
 # ═════════════════════════════════════════════════════════════════════════════
 #  OCI ↔ Termux Default Shell Integration — ivansslo/termux-rocd
 #  Makes OCI Singapore VM your default shell when opening Termux
-#  Version: 1.0.0 — 2026-07-22
+#  Version: 1.1.0 — 2026-07-27 (Fixed: Tailscale optional fallback)
 #  Usage: bash oci-default-shell.sh [--install | --uninstall | --status]
 # ═════════════════════════════════════════════════════════════════════════════
 
-set -e
+set +e # Non-fatal mode to prevent Termux pkg install failures from breaking setup
 
 OCI_TS_IP="${OCI_TS_IP:-100.91.232.91}"
 OCI_PUBLIC_IP="${OCI_PUBLIC_IP:-161.118.253.28}"
@@ -20,34 +20,29 @@ log() { echo -e "${CYN}[$1]${RST} $2"; }
 ok() { echo -e "${GRN}✅ $1${RST}"; }
 warn() { echo -e "${YLW}⚠️ $1${RST}"; }
 
-install_tailscale_termux() {
-  log "PKG" "Checking Tailscale in Termux..."
-  if ! command -v tailscale >/dev/null 2>&1; then
-    log "PKG" "Installing tailscale, openssh, mosh..."
-    pkg update -y || true
-    pkg install -y tailscale openssh mosh termux-api curl jq autossh 2>/dev/null || pkg install -y tailscale openssh curl jq
+install_termux_packages() {
+  log "PKG" "Installing SSH, Mosh, and Curl packages in Termux..."
+  if command -v pkg >/dev/null 2>&1; then
+    pkg update -y 2>/dev/null || true
+    pkg install -y openssh mosh curl jq autossh 2>/dev/null || true
+    # Attempt tailscale optionally if available
+    pkg install -y tailscale 2>/dev/null || true
   fi
 
-  # Start daemon if not running
-  if ! pgrep -x tailscaled >/dev/null 2>&1; then
-    log "TS" "Starting tailscaled (userspace mode for Termux)..."
-    mkdir -p $PREFIX/var/lib/tailscale  $PREFIX/var/run/tailscale 2>/dev/null || true
-    mkdir -p /data/data/com.termux/files/usr/var/lib/tailscale 2>/dev/null || true
-    nohup tailscaled --tun=userspace-networking --state=$HOME/.tailscale.state --socket=$HOME/.tailscale.sock > $HOME/tailscaled.log 2>&1 &
-    sleep 3
-  fi
-
-  if [ -n "$TAILSCALE_AUTH_KEY" ]; then
-    log "TS" "Connecting to tailnet with auth key..."
-    tailscale up --auth-key="$TAILSCALE_AUTH_KEY" --accept-routes --accept-dns || true
-    ok "Tailscale up done"
+  # Optional Tailscale daemon setup
+  if command -v tailscale >/dev/null 2>&1; then
+    log "TS" "Tailscale CLI detected."
+    if ! pgrep -x tailscaled >/dev/null 2>&1; then
+      mkdir -p $PREFIX/var/lib/tailscale $PREFIX/var/run/tailscale 2>/dev/null || true
+      nohup tailscaled --tun=userspace-networking --state=$HOME/.tailscale.state --socket=$HOME/.tailscale.sock > $HOME/tailscaled.log 2>&1 &
+      sleep 2
+    fi
+    if [ -n "$TAILSCALE_AUTH_KEY" ]; then
+      tailscale up --auth-key="$TAILSCALE_AUTH_KEY" --accept-routes --accept-dns 2>/dev/null || true
+    fi
   else
-    warn "No TAILSCALE_AUTH_KEY set. Open Tailscale app or run: tailscale up"
-    echo "Generate key at: https://login.tailscale.com/admin/settings/keys (tskey-auth-...)"
+    warn "Tailscale CLI pkg skipped (will use Direct SSH / Tailscale Android App)."
   fi
-
-  tailscale status || true
-  tailscale ip -4 || true
 }
 
 configure_default_shell() {
@@ -62,25 +57,23 @@ configure_default_shell() {
   cat >> $HOME/.bashrc <<EOF
 
 # >>> OCI DEFAULT SHELL >>> (added by oci-default-shell.sh @ $(date))
-# Auto-connect to OCI via Tailscale if reachable, else fallback to local
+# Auto-connect to OCI via Tailscale or Direct Public IP
 export OCI_TS_IP="$OCI_TS_IP"
 export OCI_PUBLIC_IP="$OCI_PUBLIC_IP"
 export OCI_USER="$OCI_USER"
 
 oci_shell() {
   local target="\$OCI_TS_IP"
-  # try tailscale ping first
-  if command -v tailscale >/dev/null 2>&1; then
-    if tailscale ping --c=1 --timeout=3s \$OCI_TS_IP >/dev/null 2>&1; then
-      target="\$OCI_TS_IP"
-    else
-      target="\$OCI_PUBLIC_IP"
-    fi
+  # try tailscale ping first if available
+  if command -v tailscale >/dev/null 2>&1 && tailscale ping --c=1 --timeout=2s \$OCI_TS_IP >/dev/null 2>&1; then
+    target="\$OCI_TS_IP"
+  else
+    target="\$OCI_PUBLIC_IP"
   fi
   echo "🚀 Connecting to OCI \$target as \$OCI_USER ..."
   # try mosh first (resilient), fallback to ssh
   if command -v mosh >/dev/null 2>&1; then
-    mosh --ssh="ssh -o ServerAliveInterval=20 -o StrictHostKeyChecking=no" \$OCI_USER@\$target || ssh -o ServerAliveInterval=20 -t \$OCI_USER@\$target "bash -l"
+    mosh --ssh="ssh -o ServerAliveInterval=20 -o StrictHostKeyChecking=no" \$OCI_USER@\$target || ssh -o ServerAliveInterval=20 -o StrictHostKeyChecking=no -t \$OCI_USER@\$target "bash -l"
   else
     ssh -o ServerAliveInterval=20 -o StrictHostKeyChecking=no -t \$OCI_USER@\$target "bash -l"
   fi
@@ -93,7 +86,6 @@ if [[ \$- == *i* ]] && [[ -z "\$OCI_ALREADY" ]] && [[ -z "\$ROCD_CONTAINER" ]]; 
     # only auto if TERMUX default shell enabled flag file exists
     if [ -f "\$HOME/.oci-default-shell-enabled" ]; then
       export OCI_ALREADY=1
-      # quick check if network available
       if ping -c1 -W2 \$OCI_TS_IP >/dev/null 2>&1 || ping -c1 -W2 \$OCI_PUBLIC_IP >/dev/null 2>&1; then
         oci_shell
       else
@@ -119,19 +111,28 @@ BIN
 
   cat > $HOME/bin/oci-tunnel <<'BIN'
 #!/data/data/com.termux/files/usr/bin/bash
-# Expose OCI Ollama 11434 to local Termux via autossh
+# Expose OCI Ollama 11434 to local Termux via autossh or ssh
 OCI_TS_IP="${OCI_TS_IP:-100.91.232.91}"
+OCI_PUBLIC_IP="${OCI_PUBLIC_IP:-161.118.253.28}"
 OCI_USER="${OCI_USER:-ubuntu}"
-echo "🔗 Tunneling 11434 (Ollama) via $OCI_USER@$OCI_TS_IP ..."
-autossh -M 0 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -L 11434:127.0.0.1:11434 $OCI_USER@$OCI_TS_IP -N
+TARGET="$OCI_TS_IP"
+if ! ping -c1 -W2 $OCI_TS_IP >/dev/null 2>&1; then
+  TARGET="$OCI_PUBLIC_IP"
+fi
+echo "🔗 Tunneling 11434 (Ollama) via $OCI_USER@$TARGET ..."
+if command -v autossh >/dev/null 2>&1; then
+  autossh -M 0 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -L 11434:127.0.0.1:11434 $OCI_USER@$TARGET -N
+else
+  ssh -o ServerAliveInterval=10 -L 11434:127.0.0.1:11434 $OCI_USER@$TARGET -N
+fi
 BIN
   chmod +x $HOME/bin/oci-tunnel
 
   ok "OCI default shell block added to ~/.bashrc"
   echo ""
   echo "Commands:"
-  echo "  oci-shell     → manual SSH to OCI (Tailscale first)"
-  echo "  oci-tunnel    → forward Ollama 11434 to localhost"
+  echo "  oci-shell     → manual SSH to OCI"
+  echo "  oci-tunnel    → forward OCI Ollama 11434 to localhost"
   echo "  TERMUX_OCI_LOCAL=1 bash → stay local (skip auto)"
 }
 
@@ -148,16 +149,19 @@ status() {
   echo "OCI Public IP: $OCI_PUBLIC_IP"
   echo "OCI User: $OCI_USER"
   echo ""
-  command -v tailscale >/dev/null 2>&1 && tailscale status || echo "tailscale not installed"
+  if command -v tailscale >/dev/null 2>&1; then
+    tailscale status || true
+  else
+    echo "Tailscale CLI not installed (using Direct SSH / Android App)"
+  fi
   echo ""
   echo "Default shell enabled? $( [ -f $HOME/.oci-default-shell-enabled ] && echo YES || echo NO )"
   echo "Can ping OCI TS? $(ping -c1 -W2 $OCI_TS_IP >/dev/null 2>&1 && echo YES || echo NO)"
   echo "Can ping OCI Public? $(ping -c1 -W2 $OCI_PUBLIC_IP >/dev/null 2>&1 && echo YES || echo NO)"
-  echo "SSH check: ssh -o ConnectTimeout=3 $OCI_USER@$OCI_TS_IP 'echo OK' || ssh -o ConnectTimeout=3 $OCI_USER@$OCI_PUBLIC_IP 'echo OK'"
 }
 
 case "$MODE" in
-  --install|-i|"") install_tailscale_termux; configure_default_shell; status ;;
+  --install|-i|"") install_termux_packages; configure_default_shell; status ;;
   --uninstall|-u) uninstall ;;
   --status|-s) status ;;
   *) echo "Usage: $0 [--install|--uninstall|--status]"; exit 1 ;;
@@ -165,5 +169,3 @@ esac
 
 echo ""
 echo -e "${GRN}🎉 DONE — Restart Termux to test default OCI shell${RST}"
-echo "Disable auto: rm ~/.oci-default-shell-enabled"
-echo "Enable auto: touch ~/.oci-default-shell-enabled"
