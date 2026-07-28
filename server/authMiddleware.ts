@@ -64,6 +64,11 @@ export function createAuthMiddleware(password: string): RequestHandler {
     // Public routes pass through
     if (PUBLIC_PATHS.has(req.path)) return next();
 
+    // Static frontend assets (HTML/JS/CSS) must load unauthenticated, otherwise the
+    // login screen itself can never be rendered and the user only ever sees a 401 JSON
+    // body. All privileged data and actions live under /api/, which stays protected.
+    if (!req.path.startsWith('/api/')) return next();
+
     // Enforce: require a valid, non-expired token
     prune();
     const token = parseCookies(req.headers.cookie)[TOKEN_COOKIE];

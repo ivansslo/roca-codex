@@ -24,12 +24,15 @@ npm start                     # -> http://localhost:3000  (mode dev: npm run dev
 # 1. Install dependensi utama Termux
 pkg update -y && pkg install -y nodejs-lts git curl openssh proot-distro
 
-# 2. Jalankan perbaikan environment Termux localhost
-bash termux-rocd/fix-proot-ubuntu-localhost.sh
+# 2. Set password (WAJIB — server menolak start tanpa ini)
+export WEB_PASSWORD="$(openssl rand -base64 24)"
+echo "Password kamu: $WEB_PASSWORD"
 
 # 3. Build & Start ROCAgents
 npm run build
 npm start
+# Server bind ke 127.0.0.1:3000 saja. Untuk akses dari perangkat lain,
+# pakai Tailscale dan set HOST=<tailscale-ip> secara sadar.
 ```
 
 ---

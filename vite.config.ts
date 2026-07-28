@@ -56,9 +56,10 @@ export default defineConfig({
     },
   },
   server: {
-    host: '0.0.0.0',
+    // Loopback by default; set VITE_HOST only for trusted networks (e.g. Tailscale IP).
+    host: process.env.VITE_HOST || '127.0.0.1',
     port: 3000,
-    allowedHosts: true,
+    allowedHosts: process.env.VITE_ALLOWED_HOSTS ? process.env.VITE_ALLOWED_HOSTS.split(',') : ['localhost', '127.0.0.1'],
     hmr: false,
   },
 });

@@ -17,19 +17,53 @@ if (dns && dns.setDefaultResultOrder) {
 dotenv.config();
 process.env.DISABLE_HMR = 'true';
 
+// Fail-closed security gate: the server refuses to start without a password.
+// Previously auth was optional (`if (process.env.WEB_PASSWORD)`), which meant a
+// missing env var silently produced a fully open server bound to 0.0.0.0.
+const WEB_PASSWORD = process.env.WEB_PASSWORD || "";
+const MIN_PASSWORD_LENGTH = 12;
+
+if (!WEB_PASSWORD) {
+  console.error(
+    "\n❌ REFUSING TO START: environment variable WEB_PASSWORD is not set.\n" +
+    "   This server can execute shell commands. Running it unauthenticated is unsafe.\n" +
+    "   Set one, e.g.:  export WEB_PASSWORD=\"$(openssl rand -base64 24)\"\n"
+  );
+  process.exit(1);
+}
+
+if (WEB_PASSWORD.length < MIN_PASSWORD_LENGTH) {
+  console.error(
+    `\n❌ REFUSING TO START: WEB_PASSWORD is too short (${WEB_PASSWORD.length} chars, minimum ${MIN_PASSWORD_LENGTH}).\n` +
+    "   Generate a strong one:  export WEB_PASSWORD=\"$(openssl rand -base64 24)\"\n"
+  );
+  process.exit(1);
+}
+
+// Bind to loopback by default. Exposing a shell-executing server on 0.0.0.0 puts it
+// on every network the device is attached to (including public Wi-Fi).
+// Override deliberately with HOST=... only when you know the network is trusted
+// (e.g. a Tailscale-only address).
+const HOST = process.env.HOST || "127.0.0.1";
+
 async function startServer() {
   const app = express();
   const PORT = parseInt(process.env.PORT || "3000", 10);
+
+  if (HOST !== "127.0.0.1" && HOST !== "localhost" && HOST !== "::1") {
+    console.warn(
+      `\n⚠️  HOST=${HOST} — server is reachable beyond this device. ` +
+      "Make sure the network is trusted (Tailscale/VPN), not open Wi-Fi.\n"
+    );
+  }
 
   initScheduler();
 
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-  // Optional Password Protection Middleware
-  if (process.env.WEB_PASSWORD) {
-    app.use(createAuthMiddleware(process.env.WEB_PASSWORD));
-  }
+  // Mandatory password protection (validated above; the process exits if unset).
+  app.use(createAuthMiddleware(WEB_PASSWORD));
 
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", mode: process.env.NODE_ENV || "development" });
@@ -37,7 +71,7 @@ async function startServer() {
 
   // Public: tells the frontend whether password protection is enabled.
   app.get("/api/auth/status", (req, res) => {
-    res.json({ protected: Boolean(process.env.WEB_PASSWORD) });
+    res.json({ protected: true });
   });
 
   app.get("/api/models", (req, res) => {
@@ -641,8 +675,8 @@ async function startServer() {
     app.use(vite.middlewares);
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 ROCAgents Server running on http://0.0.0.0:${PORT}`);
+  app.listen(PORT, HOST, () => {
+    console.log(`🚀 ROCAgents Server running on http://${HOST}:${PORT} (auth: required)`);
   });
 }
 
