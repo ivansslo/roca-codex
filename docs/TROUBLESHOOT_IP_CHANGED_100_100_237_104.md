@@ -16,7 +16,7 @@ Log penting:
 ```
 Error: changing settings via 'tailscale up' requires mentioning all non-default flags.
 To proceed, either re-run your command with --reset or use command below:
-tailscale up --accept-routes --auth-key=tskey-api-kySNreSbw421CNTRL-VPMdhJHZ... --hostname=ubuntu --advertise-exit-node
+tailscale up --accept-routes --auth-key=<TAILSCALE_KEY_DIREDAKSI>... --hostname=ubuntu --advertise-exit-node
 
 control: RegisterReq ... machineAuthorized=false; authURL=true
 AuthURL is https://login.tailscale.com/a/26fb9303878bc
