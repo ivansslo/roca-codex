@@ -54,7 +54,7 @@ membajak infrastruktur dalam hitungan menit.
 | 17 | `NPM_API_KEY` | npmjs.com/settings/~/tokens |
 | 18 | `GITHUB_CLIENT_SECRET` | github.com/settings/developers |
 | 19 | `CREWAI_TOKEN`, `BACKBOARD_KEY`, `HONCHO_KEY`, `CLAW_KEY`, `CLAWHUB_KEY`, `CLAWLINK_KEY`, `DP_TOKEN` | masing-masing dashboard |
-| 20 | `FB_API_KEY` (proyek `yttriferous-magpie-16ppv`) | **Tidak perlu rotasi** — apiKey web Firebase memang publik. Yang wajib: **periksa Security Rules**. |
+| 20 | `FB_API_KEY` | **Firebase sudah dihapus dari RocAgent** (30 Juli 2026). Kalau proyek `planning-with-ai-36675` atau `yttriferous-magpie-16ppv` tidak dipakai lagi, hapus saja proyeknya di Firebase Console — itu menutup risikonya sepenuhnya. |
 
 ### 🔵 PRIORITAS 4 — password lemah yang dipakai ulang
 

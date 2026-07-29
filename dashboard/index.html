@@ -123,7 +123,7 @@
     <div>
       <h1><span class="bolt">⚡</span> ROC AgentRoute — Hermes Dashboard
         <span class="badge">v5.13.1</span></h1>
-      <div class="proj">Firebase Project: <b>planning-with-ai-36675</b> · Firestore + Hosting · Oracle VM (webvirtcloud.ai.studio) · Antigravity IDE (antigravity.ai.studio)</div>
+      <div class="proj">Oracle VM (Tailscale) · Termux · SQLite lokal</div>
     </div>
     <div id="clock">--:--:--</div>
   </header>
@@ -161,7 +161,7 @@
         <p class="studio-desc" style="margin-top:10px;font-size:.68rem">
           ℹ️ Subdomain <span class="c">*.ai.studio</span> milik Google &amp; tidak bisa di-klaim user — jadi ini panel
           integrasi resminya: <b>status live</b> via Cloudflare bridge HTTPS + tombol langsung ke setiap service.
-          Konsol lengkap (login Firebase/KVM/noVNC) ada di <span class="c">vm.roadfx.biz.id</span>.
+          Konsol lengkap (KVM/noVNC) ada di <span class="c">vm.roadfx.biz.id</span>.
         </p>
       </div>
       <div class="vm-actions">
@@ -179,16 +179,6 @@
   </div>
 
   <div class="panel">
-    <h2><span class="ico">🔥</span> Firestore — koleksi <span class="c">chats</span></h2>
-    <div class="note" id="fbNote"></div>
-    <div id="msgs"><div class="msg empty">Memuat…</div></div>
-    <div class="row">
-      <input type="text" id="inp" placeholder="Ketik pesan untuk disimpan ke Firestore… (Enter = kirim)">
-      <button id="btn">Simpan</button>
-    </div>
-  </div>
-
-  <div class="panel">
     <h2><span class="ico">⌨️</span> Hermes CLI — Command Cheatsheet</h2>
     <div class="cmds">
       <div><b>hermes setup</b> — konfigurasi API keys</div>
@@ -197,9 +187,6 @@
       <div><b>hermes orchestrator "…"</b> — agent otonom</div>
       <div><b>hermes coding</b> — mode coding interaktif</div>
       <div><b>hermes ai-best</b> — runtime AI terbaik</div>
-      <div><b>hermes firebase status</b> — info + data Firestore</div>
-      <div><b>hermes firebase admin</b> — Admin SDK (service account)</div>
-      <div><b>hermes firebase admin save "…"</b> — simpan dokumen</div>
       <div><b>hermes vm status</b> — Oracle VM WebVirtCloud live</div>
       <div><b>hermes vm console</b> — buka VM Console (CF)</div>
       <div><b>hermes antigravity install</b> — Google Antigravity IDE (linux/ARM64)</div>
@@ -225,7 +212,6 @@
       <a href="http://161.118.253.28/wvc/" target="_blank" rel="noopener">webvirtcloud 🛡️</a>
       <a href="http://161.118.253.28/kuma/" target="_blank" rel="noopener">kuma 📊</a>
       <a href="http://161.118.253.28/monitor/" target="_blank" rel="noopener">monitor 📈</a>
-      <a href="https://planning-with-ai-36675.web.app" target="_blank" rel="noopener">firebase-hosting</a>
       <a href="https://github.com/ivansslo/roc-agentsroute" target="_blank" rel="noopener">github</a>
     </div>
   </div>
@@ -291,7 +277,6 @@ const EPS = [
   ['CF AI Factory','https://factory.roadfx.biz.id'],
   ['Status (Kuma)','https://status.roadfx.biz.id'],
   ['AIS-DEV','https://ais-dev-jqizmthqeu2hdc4e3pgh63-70765440683.asia-east1.run.app'],
-  ['Firebase Hosting','https://planning-with-ai-36675.web.app'],
   ['Oracle VM Console','https://vm.roadfx.biz.id'],
   ['Oracle VM Health (CF bridge)','https://vm.roadfx.biz.id/health'],
   ['Monitor','https://monitor.roadfx.biz.id'],
@@ -319,81 +304,11 @@ document.querySelectorAll('#endpoints .card').forEach(async (card,i)=>{
   }
 });
 
-// ─── Firebase (Firestore) ─────────────────────────────────────────────────
-const firebaseConfig = {
-  apiKey: "AIzaSyAPH8DG8Ji6Zjcid3s6qtnU9J8qBKGrpOQ",
-  authDomain: "planning-with-ai-36675.firebaseapp.com",
-  projectId: "planning-with-ai-36675",
-  storageBucket: "planning-with-ai-36675.firebasestorage.app",
-  messagingSenderId: "877262776320",
-  appId: "1:877262776320:web:44329b332a5dcddf0210e5"
-};
-const msgs = document.getElementById('msgs');
-const note = document.getElementById('fbNote');
-const showNote = t => { note.textContent=t; note.style.display='block'; };
-
-function renderDocs(docs){
-  if(!docs.length){ msgs.innerHTML='<div class="msg empty">Belum ada pesan di koleksi chats.</div>'; return; }
-  msgs.innerHTML='';
-  docs.forEach(d=>{
-    const x=d.data();
-    const ts=x.timestamp?.toDate ? x.timestamp.toDate().toLocaleString('id-ID') : '';
-    const el=document.createElement('div');
-    el.className='msg';
-    el.innerHTML=`<div class="meta">${x.sender||'anon'} · ${ts}</div>`;
-    const p=document.createElement('div');
-    p.textContent=x.text||'';
-    el.appendChild(p);
-    msgs.appendChild(el);
-  });
-}
-
-async function initFirebase(){
-  try{
-    const { initializeApp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js');
-    const { getFirestore, collection, query, orderBy, limit, getDocs, addDoc, serverTimestamp }
-      = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-    const db = getFirestore(initializeApp(firebaseConfig));
-    const col = collection(db,'chats');
-
-    async function load(){
-      try{
-        let snap;
-        try{ snap=await getDocs(query(col,orderBy('timestamp','desc'),limit(20))); }
-        catch{ snap=await getDocs(query(col,limit(20))); }
-        renderDocs(snap.docs);
-      }catch(e){
-        msgs.innerHTML='<div class="msg empty">Tidak bisa membaca Firestore.</div>';
-        if(String(e).includes('permiss')||e.code==='permission-denied')
-          showNote('🔒 Security Rules menolak read anonim. Longgarkan rules untuk koleksi chats, atau pakai service account (hermes firebase admin).');
-        else
-          showNote('⚠️ '+e.message+' — pastikan Firestore Database sudah dibuat di Firebase Console.');
-      }
-    }
-    await load();
-
-    const btn=document.getElementById('btn'), inp=document.getElementById('inp');
-    async function send(){
-      const text=inp.value.trim(); if(!text) return;
-      btn.disabled=true;
-      try{
-        await addDoc(col,{sender:'dashboard', text, timestamp:serverTimestamp()});
-        inp.value=''; hideNote(); await load();
-      }catch(e){
-        if(String(e).includes('permiss')||e.code==='permission-denied')
-          showNote('🔒 Tulis ditolak Security Rules. Tambahkan rule allow create untuk chats, atau: hermes firebase admin save "pesan"');
-        else showNote('⚠️ '+e.message);
-      }finally{ btn.disabled=false; }
-    }
-    btn.addEventListener('click',send);
-    inp.addEventListener('keydown',e=>{ if(e.key==='Enter') send(); });
-  }catch(err){
-    // Preview sandbox / offline: Firebase SDK tidak bisa dimuat
-    msgs.innerHTML='<div class="msg empty">Mode preview/offline — Firebase SDK butuh koneksi internet. Buka dashboard ini via Hosting untuk mode live.</div>';
-  }
-}
-function hideNote(){ note.style.display='none'; }
-initFirebase();
+// ─── Firebase dihapus ─────────────────────────────────────────────────────
+// Integrasi Firebase/Firestore dibuang dari RocAgent pada 30 Juli 2026.
+// Panel chat & data pada dashboard ini kini nonaktif; sisanya tautan statis.
+// Kalau nanti butuh backend data, pakai server/db.ts (SQLite) yang sudah ada
+// dan berjalan lokal — tanpa kunci pihak ketiga yang harus ditanam di HTML.
 </script>
 </body>
 </html>

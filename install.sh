@@ -55,15 +55,6 @@ cat > "$HOME/.hermes/plugins/multi-agent.commands" <<'EOF'
 #tester
 EOF
 
-# Optional: Firebase CLI (dipakai oleh: hermes firebase deploy)
-# Skip dengan: HERMES_NO_FIREBASE_CLI=1
-if [ -z "${HERMES_NO_FIREBASE_CLI:-}" ] && command -v npm >/dev/null 2>&1; then
-  echo "🔥 Installing Firebase CLI (firebase-tools)..."
-  npm install -g firebase-tools 2>&1 | tail -1 || \
-    echo "ℹ️  Firebase CLI skip — install manual: npm install -g firebase-tools"
-  echo "   Login (headless/Termux): firebase login --no-localhost"
-fi
-
 echo ""
 echo "✅ Hermes v5.14.0 Oracle installed!"
 echo ""
