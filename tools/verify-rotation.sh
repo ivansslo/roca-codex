@@ -165,12 +165,30 @@ uji_r2() {
   local out
   out=$(AWS_ACCESS_KEY_ID="$akid" AWS_SECRET_ACCESS_KEY="$sak" AWS_DEFAULT_REGION=auto \
         aws s3 ls --endpoint-url "https://$acct.r2.cloudflarestorage.com" 2>&1)
-  if printf '%s' "$out" | grep -qiE 'InvalidAccessKeyId|SignatureDoesNotMatch|AccessDenied'; then
+  # Tiga hasil, bukan dua. Versi sebelumnya hanya mengenali penolakan kredensial
+  # dan menganggap sisanya sukses — sehingga "NotEntitled" (R2 belum diaktifkan
+  # di akun) dilaporkan sebagai BEKERJA, padahal permintaan ditolak di lapisan
+  # entitlement dan tanda tangan belum tentu sempat diperiksa.
+  if printf '%s' "$out" | grep -qiE 'NotEntitled|not entitled'; then
+    printf '  %s? BELUM BISA DIUJI%s — R2 belum diaktifkan di akun ini.\n' "$c_yel" "$c_rst"
+    printf '    Cloudflare menolak sebelum memeriksa kunci, jadi keabsahannya\n'
+    printf '    belum terbukti — bukan berarti kuncinya salah.\n'
+    printf '    Aktifkan: dash.cloudflare.com -> R2 -> Enable / Purchase R2\n'
+    printf '    (ada tier gratis; tetap perlu kartu terdaftar)\n'
+    printf '    Lalu jalankan ulang perintah ini.\n'
+  elif printf '%s' "$out" | grep -qiE 'InvalidAccessKeyId|SignatureDoesNotMatch|AccessDenied|InvalidArgument'; then
     printf '  %s✗ DITOLAK%s — kunci salah atau tidak berizin\n' "$c_red" "$c_rst"
     printf '    %s\n' "$(printf '%s' "$out" | head -1)"
+  elif printf '%s' "$out" | grep -qiE 'error occurred|Could not connect|EndpointConnectionError'; then
+    printf '  %s? TIDAK JELAS%s — periksa pesannya:\n' "$c_yel" "$c_rst"
+    printf '%s' "$out" | head -3 | sed 's/^/    /'
   else
     printf '  %s✓ BEKERJA%s — kunci baru diterima R2\n' "$c_grn" "$c_rst"
-    printf '%s' "$out" | head -5 | sed 's/^/    /'
+    if [ -z "$out" ]; then
+      printf '    Daftar bucket kosong. Itu SUKSES: kunci sah, akun belum punya bucket.\n'
+    else
+      printf '%s' "$out" | head -5 | sed 's/^/    /'
+    fi
   fi
 }
 

@@ -204,6 +204,13 @@ bash tools/verify-rotation.sh r2
 Skrip memvalidasi panjang kunci sebelum memanggil API — Access Key ID 32
 karakter, Secret 64, Account ID 32.
 
+**Hasil `NotEntitled`?** Artinya R2 belum diaktifkan di akunmu. Cloudflare
+menolak permintaan sebelum memeriksa kunci, jadi keabsahan kredensialnya belum
+terbukti — bukan berarti salah. Aktifkan di dash.cloudflare.com → **R2** (ada
+tier gratis, tapi kartu tetap harus terdaftar), lalu uji ulang. Kalau memang
+belum berencana memakai R2, hapus saja kuncinya: kredensial menganggur adalah
+risiko tanpa manfaat.
+
 **Belum punya bucket?** `CF_R2_BUCKET` boleh dikosongkan. Kunci R2 berlaku
 untuk seluruh akun, bukan per-bucket, jadi kredensialnya tetap sah. `aws s3 ls`
 akan mengembalikan daftar kosong — itu **sukses**, bukan kegagalan: artinya
