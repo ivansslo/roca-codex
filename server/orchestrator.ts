@@ -1,3 +1,9 @@
+/**
+ * RocAgent — proprietary software.
+ * Copyright (c) 2026 Ivan Ssl (ivansslo). All rights reserved.
+ * Unauthorised use, copying, modification, or distribution is prohibited.
+ * See LICENSE in the project root.
+ */
 import "dotenv/config";
 import dns from "dns";
 import { exec } from "child_process";

@@ -12,7 +12,7 @@ db.json
 sessions/
 *.jpg
 *.png
-!rocd/screenshot.png
+# (rocd/ removed — GPL conflict)
 
 # Temporary files
 *.tmp

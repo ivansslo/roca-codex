@@ -1,3 +1,9 @@
+/**
+ * RocAgent — proprietary software.
+ * Copyright (c) 2026 Ivan Ssl (ivansslo). All rights reserved.
+ * Unauthorised use, copying, modification, or distribution is prohibited.
+ * See LICENSE in the project root.
+ */
 import express from "express";
 import path from "path";
 import fs from "fs";

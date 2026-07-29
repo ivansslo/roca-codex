@@ -1,4 +1,10 @@
 /**
+ * RocAgent — proprietary software.
+ * Copyright (c) 2026 Ivan Ssl (ivansslo). All rights reserved.
+ * Unauthorised use, copying, modification, or distribution is prohibited.
+ * See LICENSE in the project root.
+ */
+/**
  * Central shell-command guard for every execution path in this server.
  *
  * WHAT THIS IS

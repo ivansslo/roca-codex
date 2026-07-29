@@ -1,21 +1,96 @@
-MIT License
+RocAgent — Proprietary Software License
+All Rights Reserved
 
-Copyright (c) 2026 Ivan Ssl (ivansslo) <ivansslo@users.noreply.github.com>
+Copyright (c) 2026 Ivan Ssl (ivansslo)
+Contact: ivansslo@users.noreply.github.com
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+NOTICE
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF KIND, EXPRESS OR
+This software and its source code are proprietary and confidential.
+They are NOT open source. No licence to use, copy, modify, or distribute
+this software is granted by the mere act of making the source visible,
+by providing access to a repository, or by any means other than a written
+agreement signed by the copyright holder.
+
+
+1. GRANT
+
+No rights are granted. The copyright holder reserves all rights in and to
+this software under applicable copyright law and international treaties.
+
+Any use requires PRIOR WRITTEN PERMISSION from the copyright holder.
+
+
+2. PROHIBITED WITHOUT WRITTEN PERMISSION
+
+Without express prior written permission you may NOT:
+
+  a) use this software, in whole or in part, for any purpose, whether
+     personal, educational, commercial, or otherwise;
+  b) copy, reproduce, clone, fork, mirror, or archive this software or
+     any portion of it;
+  c) modify, adapt, translate, or create derivative works from it;
+  d) distribute, publish, sublicense, sell, rent, lease, or otherwise
+     transfer it to any third party;
+  e) host it, or operate it as a service, on any infrastructure;
+  f) reverse engineer, decompile, or disassemble any compiled form of it;
+  g) remove, alter, or obscure any copyright, licence, or attribution
+     notice contained in it;
+  h) use it, or any part of it, as training data, as retrieval material,
+     or as input for any machine learning or artificial intelligence
+     system, including large language models.
+
+
+3. PERMITTED WITHOUT PERMISSION
+
+  a) Reading the source code for the sole purpose of evaluation or
+     security review, where access has been lawfully obtained.
+  b) Quoting short excerpts for commentary, criticism, news reporting,
+     teaching, or research, to the limited extent allowed by applicable
+     fair use / fair dealing law, with attribution.
+
+
+4. THIRD-PARTY COMPONENTS
+
+This software depends on third-party packages that carry their own
+licences. Those licences govern those components; they do not extend any
+rights to this software. Third-party dependencies are declared in
+package.json and package-lock.json.
+
+
+5. NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+
+6. LIMITATION OF LIABILITY
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE,
+ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+This software executes shell commands on the host it runs on. The
+copyright holder accepts no liability for data loss, system damage,
+security breach, or any other harm resulting from its use.
+
+
+7. TERMINATION
+
+Any use in breach of these terms terminates all permissions automatically
+and immediately, and may constitute copyright infringement actionable
+under law.
+
+
+8. FUTURE RELICENSING
+
+The copyright holder may, at their sole discretion, release future
+versions of this software under a different licence. Such a release
+applies only to the versions explicitly published under that licence and
+grants no rights over this version.
+
+
+For licensing enquiries, contact the copyright holder.

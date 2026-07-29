@@ -1,3 +1,9 @@
+/**
+ * RocAgent — proprietary software.
+ * Copyright (c) 2026 Ivan Ssl (ivansslo). All rights reserved.
+ * Unauthorised use, copying, modification, or distribution is prohibited.
+ * See LICENSE in the project root.
+ */
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { RequestHandler, Request, Response, NextFunction } from 'express';
 
