@@ -71,6 +71,33 @@ Every decision is logged with the tool name, verdict, and command.
 
 ---
 
+## Operator tools
+
+```bash
+cd ~/RocAgent
+bash tools/install.sh
+source ~/.bashrc
+```
+
+Installs `rocvault` and `rocagent-vm` into `~/.local/bin` and adds that
+directory to `PATH`. Checks dependencies first, including whether the local
+OpenSSL actually supports `kdf` and HMAC. Safe to re-run.
+
+| Tool | Purpose |
+|---|---|
+| `rocvault` | Encrypt `.env` at rest — PBKDF2 600k, AES-256-CBC, encrypt-then-MAC |
+| `rocagent-vm` | Drive this repo on a remote VM from a phone, over SSH |
+
+On the VM: `rocagent-vm pull && rocagent-vm setup-tools`
+
+**Termux needs `openssl-tool`, not `openssl`:**
+
+```bash
+pkg install -y openssl-tool coreutils git openssh
+```
+
+---
+
 ## Requirements
 
 - Node.js 20 or newer

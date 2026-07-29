@@ -29,7 +29,11 @@ die()  { printf '%s✗ %s%s\n' "$c_red" "$*" "$c_rst" >&2; exit 1; }
 ok()   { printf '%s✓%s %s\n' "$c_grn" "$c_rst" "$*"; }
 warn() { printf '%s⚠%s  %s\n' "$c_yel" "$c_rst" "$*" >&2; }
 
-command -v openssl >/dev/null || die "openssl tidak ditemukan"
+for _dep in openssl od tr sed; do
+  command -v "$_dep" >/dev/null || die "Perintah '\''$_dep'\'' tidak ditemukan.
+  Termux:  pkg install openssl-tool coreutils
+  Debian:  sudo apt install openssl coreutils"
+done
 
 usage() {
   cat <<'EOF'
@@ -130,9 +134,17 @@ vault_open() {
 
   local mac_calc; mac_calc=$(openssl dgst -sha256 -mac HMAC -macopt "hexkey:$kmac" -binary < "$tmp" | od -An -tx1 -v | tr -d ' \n')
 
-  # Perbandingan waktu-tetap: jangan bocorkan berapa banyak byte yang cocok.
-  if ! python3 -c "import hmac,sys; sys.exit(0 if hmac.compare_digest(sys.argv[1],sys.argv[2]) else 1)" \
-       "$mac_calc" "$mac_stored" 2>/dev/null; then
+  # Perbandingan aman tanpa python3 (Termux minimal sering tidak punya python).
+  #
+  # Teknik: double-HMAC comparison. Kedua nilai di-HMAC lagi dengan kunci acak
+  # yang baru dibuat untuk sekali pakai. Karena penyerang tidak bisa memprediksi
+  # kunci itu, ia tidak bisa menyusun tebakan yang membocorkan berapa byte awal
+  # yang cocok lewat waktu eksekusi. Perbandingan '=' biasa jadi aman.
+  local blind h1 h2
+  blind=$(openssl rand -hex 32)
+  h1=$(printf '%s' "$mac_calc"   | openssl dgst -sha256 -mac HMAC -macopt "hexkey:$blind" -r | cut -d' ' -f1)
+  h2=$(printf '%s' "$mac_stored" | openssl dgst -sha256 -mac HMAC -macopt "hexkey:$blind" -r | cut -d' ' -f1)
+  if [ "$h1" != "$h2" ]; then
     die "VERIFIKASI GAGAL. Passphrase salah, atau berkas telah diubah.
   Berkas TIDAK didekripsi — ini disengaja."
   fi

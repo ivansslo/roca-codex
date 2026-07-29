@@ -1,15 +1,57 @@
 # rocvault — kunci berkas `.env` dengan openssl
 
-## Pasang di Termux
+## Pasang
 
+### 1. Dependensi
+
+**Termux:**
 ```bash
-mkdir -p ~/bin
-cp rocvault ~/bin/ && chmod +x ~/bin/rocvault
-echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+pkg install -y openssl-tool coreutils git openssh
 ```
 
-Butuh `openssl`, `od`, `python3` — semuanya sudah ada di Termux standar.
-Sengaja **tidak** memakai `xxd`, karena tidak selalu terpasang.
+`openssl-tool`, bukan `openssl` — di Termux paket binernya bernama begitu.
+Butuh OpenSSL 3.0+ karena memakai subperintah `openssl kdf`. Cek dengan
+`openssl version`.
+
+**Debian/Ubuntu (VM Oracle):**
+```bash
+sudo apt install -y openssl coreutils git openssh-client
+```
+
+### 2. Pasang
+
+```bash
+cd ~/RocAgent
+bash tools/install.sh
+source ~/.bashrc
+```
+
+Installer memeriksa dependensi, menguji `openssl kdf` dan HMAC benar-benar
+berfungsi, membuat `~/.local/bin`, memasang symlink, lalu **menambahkan
+direktori itu ke PATH di `.bashrc`**. Aman dijalankan berulang kali.
+
+> Panduan versi sebelumnya menulis `cp rocvault ~/bin/` tanpa membuat `~/bin`
+> lebih dulu dan tanpa menyentuh PATH. Akibatnya `ln -sf` gagal diam-diam dan
+> perintahnya `command not found`. Itu kesalahan saya; `tools/install.sh`
+> menggantikannya.
+
+### 3. Verifikasi
+
+```bash
+rocvault --help
+rocagent-vm --help
+```
+
+### Dependensi runtime
+
+`openssl`, `od`, `tr`, `sed` — semuanya dari `coreutils` dan `openssl-tool`.
+
+**Tidak butuh python3.** Versi awal memakainya untuk perbandingan MAC
+waktu-tetap, tapi Termux minimal sering tanpa python. Sekarang memakai
+*double-HMAC comparison*: kedua nilai MAC di-HMAC ulang dengan kunci acak
+sekali pakai sebelum dibandingkan, sehingga penyerang tidak bisa memakai
+selisih waktu untuk menebak byte per byte. Sengaja juga tidak memakai `xxd`,
+yang tidak selalu terpasang.
 
 ---
 
@@ -68,7 +110,8 @@ atau salt tanpa terdeteksi.
 
 ## Hasil pengujian
 
-Dijalankan sungguhan, bukan diasumsikan — **10 lulus, 0 gagal**:
+Dijalankan sungguhan, bukan diasumsikan — **10 lulus, 0 gagal**, lalu **6/6
+diulang** setelah python3 dihapus dari jalur kripto:
 
 ```
 ✓ .env.vault dibuat, mode berkas 600

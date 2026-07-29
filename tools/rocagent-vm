@@ -55,6 +55,7 @@ rocagent-vm — kelola RocAgent di VM dari Termux
   stop                Hentikan layanan
   logs [N]            Tail log server (default 50 baris)
   open                Tunnel port VM ke localhost Termux, lalu buka di browser
+  setup-tools         Pasang rocvault & rocagent-vm ke PATH di VM
   exec <CMD...>       Jalankan perintah apa pun di dalam direktori repo di VM
 
 Environment:
@@ -136,6 +137,16 @@ cmd_clone() {
 }
 
 cmd_pull()   { require_link; vm "cd '$VM_DIR' && git pull --ff-only"; }
+
+cmd_setup_tools() {
+  require_link
+  step "Memasang tools di VM"
+  vm "test -f '$VM_DIR/tools/install.sh'" \
+    || die "Belum ada $VM_DIR/tools/install.sh — jalankan 'rocagent-vm pull' dulu."
+  vm "cd '$VM_DIR' && bash tools/install.sh"
+  echo
+  ok "Di VM, tools ada di ~/.local/bin (sudah masuk PATH via .bashrc)"
+}
 
 cmd_review() {
   require_link
@@ -268,7 +279,8 @@ main() {
     status)     cmd_status ;;
     setup-key)  cmd_setup_key ;;
     clone)      cmd_clone ;;
-    pull)       cmd_pull ;;
+    pull)        cmd_pull ;;
+    setup-tools) cmd_setup_tools ;;
     review)     cmd_review "$@" ;;
     diff)       cmd_diff "$@" ;;
     show)       cmd_show "$@" ;;
