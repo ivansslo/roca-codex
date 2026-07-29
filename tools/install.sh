@@ -141,7 +141,18 @@ for name in app cloud personal; do
     continue
   fi
 
+  if [ -e "$target.vault" ]; then
+    # Sudah terkunci di vault. Menulis template plaintext di sebelahnya akan
+    # menduplikasi rahasia dalam bentuk tidak terenkripsi — persis yang
+    # dihindari oleh proses lock. Biarkan saja.
+    ok "$name.env sudah terkunci di $name.env.vault — tidak dibuat ulang"
+    SKIPPED="$SKIPPED $name(vault)"
+    continue
+  fi
+
   if [ -f "$template" ]; then
+    # Ini juga jalur PEMULIHAN: kalau sebuah .env hilang (mis. ter-shred),
+    # menjalankan installer lagi akan menyusunnya kembali dari template.
     # umask memastikan berkas lahir dengan izin ketat, tidak ada jendela
     # waktu di mana ia sempat terbaca proses lain.
     (umask 077; cp "$template" "$target")

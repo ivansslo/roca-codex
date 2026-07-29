@@ -38,12 +38,26 @@ if [ ${#vaults[@]} -gt 0 ]; then
     FOUND_ANY=1
   done
   printf '\n'
-  printf '  Kalau vault-nya ada, isinya UTUH. Buka dengan:\n'
-  printf '    rocvault unlock %s/cloud.env.vault %s/cloud.env\n' "$CFG" "$CFG"
+  printf '  Isi vault UTUH. Buka yang kamu butuhkan:\n'
+  # Cetak perintah untuk vault yang BENAR-BENAR ada. Versi sebelumnya
+  # menyebut cloud.env.vault secara hardcoded, sehingga menyuruh membuka
+  # berkas yang tidak ada ketika yang tersisa justru personal.env.vault.
+  for v in "${vaults[@]}"; do
+    printf '    rocvault unlock %s %s\n' "$v" "${v%.vault}"
+  done
 else
   bad "Tidak ada berkas .vault di $CFG"
   printf '    Artinya rocvault lock tidak pernah berhasil untuk berkas itu.\n'
 fi
+
+# Laporkan mana yang hilang sama sekali — itu yang sebenarnya dicari.
+printf '\n  Status tiap berkas:\n'
+for n in app cloud personal; do
+  if   [ -f "$CFG/$n.env" ];       then printf '    %-9s plaintext ADA (belum di-lock)\n' "$n"
+  elif [ -f "$CFG/$n.env.vault" ]; then printf '    %-9s terkunci di vault ✓\n' "$n"
+  else                                  printf '    %-9s %sHILANG%s — susun ulang dari docs/%s.env.template\n' "$n" "$c_red" "$c_rst" "$n"
+  fi
+done
 
 # ── 2. Cadangan .vault.bak dari rocvault rotate ──────────────────
 head2 "2. Cadangan vault (.vault.bak)"
