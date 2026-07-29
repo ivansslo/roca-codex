@@ -92,7 +92,12 @@ cmd_lock() {
   local kenc="${keys:0:64}" kmac="${keys:64:64}"
   local iv_hex; iv_hex=$(openssl rand -hex 16)
 
-  local tmp; tmp=$(mktemp); trap 'rm -f "$tmp" "$tmp.ct"' RETURN
+  local tmp; tmp=$(mktemp)
+  # Kutip GANDA: path harus dibekukan sekarang. Dengan kutip tunggal, $tmp baru
+  # dievaluasi saat RETURN — ketika variabel local sudah hilang — dan `set -u`
+  # menjadikannya "unbound variable".
+  # shellcheck disable=SC2064
+  trap "rm -f '$tmp' '$tmp.ct'" RETURN
   openssl enc -aes-256-cbc -K "$kenc" -iv "$iv_hex" -in "$plain" -out "$tmp.ct" \
     || die "Enkripsi gagal"
 
@@ -126,7 +131,9 @@ vault_open() {
 
   local total body tmp
   total=$(wc -l < "$enc")
-  tmp=$(mktemp); trap 'rm -f "$tmp"' RETURN
+  tmp=$(mktemp)
+  # shellcheck disable=SC2064  # sengaja: bekukan path saat trap dibuat, lihat catatan di cmd_lock
+  trap "rm -f '$tmp'" RETURN
   # Semua baris kecuali MAC di baris terakhir.
   head -n $((total - 1)) "$enc" > "$tmp"
   # head membuang newline terakhir; kembalikan persis seperti saat MAC dihitung.
@@ -182,7 +189,9 @@ cmd_edit() {
   # Utamakan tmpfs supaya plaintext tidak pernah menyentuh disk permanen.
   dir=$([ -d /dev/shm ] && echo /dev/shm || echo "${TMPDIR:-/tmp}")
   tmp=$(mktemp "$dir/rocvault.XXXXXX")
-  trap 'shred -u "$tmp" 2>/dev/null || rm -f "$tmp"' EXIT
+  # shellcheck disable=SC2064  # sengaja: bekukan path sekarang, lihat catatan di cmd_lock.
+  # Ini KRITIS di sini: bila trap gagal, plaintext .env tertinggal di disk.
+  trap "shred -u '$tmp' 2>/dev/null || rm -f '$tmp'" EXIT
 
   vault_open "$enc" "$pass" > "$tmp"
   local before; before=$(sha256sum < "$tmp")

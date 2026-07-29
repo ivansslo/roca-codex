@@ -19,8 +19,9 @@
     "postinstall": "node scripts/postinstall.js",
     "lint": "tsc --noEmit",
     "codex": "tsx codex-cli.ts",
-    "test": "tsx server/__tests__/commandGuard.test.ts && tsx server/__tests__/shellGuard.integration.test.ts",
-    "test:guard": "tsx server/__tests__/commandGuard.test.ts"
+    "test": "tsx server/__tests__/commandGuard.test.ts && tsx server/__tests__/shellGuard.integration.test.ts && bash tools/__tests__/rocvault.test.sh",
+    "test:guard": "tsx server/__tests__/commandGuard.test.ts",
+    "test:vault": "bash tools/__tests__/rocvault.test.sh"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
