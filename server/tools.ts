@@ -3,8 +3,35 @@ import path from 'path';
 import { db } from './db';
 import { exec } from 'child_process';
 import util from 'util';
+import { checkCommand, auditLine, resolveMode } from './commandGuard';
 
 const execAsync = util.promisify(exec);
+
+/**
+ * Single choke point for every shell-executing tool. Returns null when the
+ * command may proceed, or the error object the tool should return.
+ *
+ * Note the ordering: unescapeHtml() runs BEFORE this, deliberately. It turns
+ * "&amp;&amp;" back into "&&", so the guard must inspect the post-unescape
+ * string — the same string the shell will receive. Guarding the escaped form
+ * would let an attacker hide operators behind HTML entities.
+ */
+function guardShell(tool: string, command: string) {
+  const mode = resolveMode();
+  const verdict = checkCommand(command, mode);
+  console.log(auditLine(tool, command, verdict));
+  if (verdict.allowed) return null;
+  return {
+    status: 'error' as const,
+    blocked: true,
+    code: verdict.code,
+    message: `Blocked by shell guard [${verdict.code}]: ${verdict.reason}`,
+    offending: verdict.offending,
+    stdout: '',
+    stderr: '',
+    hint: 'If this is a legitimate operation, run it yourself in a terminal. Set SHELL_GUARD=warn to log instead of block (not recommended).',
+  };
+}
 
 function unescapeHtml(str: string): string {
   if (typeof str !== 'string') return str;
@@ -240,6 +267,10 @@ export const toolImplementations: Record<string, Function> = {
   run_bash_command: async (args: { command: string }, _onProgress?: ToolProgressCallback) => {
     try {
       const cleanCommand = unescapeHtml(args.command || "");
+
+      // Guard AFTER unescaping: inspect exactly what the shell will receive.
+      const blocked = guardShell('run_bash_command', cleanCommand);
+      if (blocked) return blocked;
 
       // Ensure Termux native binary path is included in PATH
       const termuxBin = "/data/data/com.termux/files/usr/bin";
@@ -550,7 +581,10 @@ export const toolImplementations: Record<string, Function> = {
 
   terminal_manager: async (args: { command: string; timeout?: number }) => {
     try {
-      const cmd = args.command || "ls -la";
+      const cmd = unescapeHtml(args.command || "ls -la");
+      const blocked = guardShell('terminal_manager', cmd);
+      if (blocked) return blocked;
+
       const timeout = args.timeout || 30000;
       const env = { ...process.env, PATH: process.env.PATH || "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" };
       let stdout = "", stderr = "";
@@ -755,6 +789,9 @@ export const toolImplementations: Record<string, Function> = {
   // Configured in Settings → SSH. Returns REAL stdout/stderr.
   ssh_run: async (args: { command: string }) => {
     const cmd = unescapeHtml(args.command || "");
+    // Remote execution is guarded too: the target host is the user's own VM.
+    const blocked = guardShell('ssh_run', cmd);
+    if (blocked) return blocked;
     return await sshExec(cmd);
   }
 };

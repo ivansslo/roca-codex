@@ -11,7 +11,9 @@
     "clean": "rm -rf dist server.js",
     "postinstall": "node scripts/postinstall.js",
     "lint": "tsc --noEmit",
-    "codex": "tsx codex-cli.ts"
+    "codex": "tsx codex-cli.ts",
+    "test": "tsx server/__tests__/commandGuard.test.ts && tsx server/__tests__/shellGuard.integration.test.ts",
+    "test:guard": "tsx server/__tests__/commandGuard.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
