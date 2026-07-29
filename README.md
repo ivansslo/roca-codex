@@ -101,6 +101,8 @@ supports `kdf` and HMAC.
 |---|---|
 | `rocvault` | Encrypt `.env` at rest — PBKDF2 600k, AES-256-CBC, encrypt-then-MAC |
 | `rocagent-vm` | Drive this repo on a remote VM from a phone, over SSH |
+| `verify-rotation.sh` | Prove old credentials are actually dead after rotating |
+| `unhook-ubuntu.sh` | Remove the Termux auto-launch container hook |
 
 On the VM: `rocagent-vm pull && rocagent-vm setup-tools`
 

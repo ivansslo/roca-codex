@@ -20,6 +20,9 @@ membajak infrastruktur dalam hitungan menit.
 
 ### 🔴 PRIORITAS 1 — bisa langsung merugikan uang (hari ini, sekarang)
 
+> **Panduan klik-per-klik untuk kelima ini: [LANGKAH-ROTASI-5-TERATAS.md](LANGKAH-ROTASI-5-TERATAS.md)**
+> Verifikasi otomatis: `bash tools/verify-rotation.sh`
+
 | # | Kredensial | Tempat rotasi | Kenapa mendesak |
 |---|---|---|---|
 | 1 | `OPENAI_API_KEY` / `OPENAI_KEY` / `OA_KEY` | platform.openai.com/api-keys | Penyalahgunaan langsung menagih kartu kamu. Ada **3 kunci OpenAI** berbeda di berkasmu. |
