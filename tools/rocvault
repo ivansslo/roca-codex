@@ -1,0 +1,247 @@
+#!/usr/bin/env bash
+# rocvault — enkripsi/dekripsi berkas .env dengan openssl.
+#
+# DESAIN KRIPTO
+#   Turunan kunci : PBKDF2-HMAC-SHA512, 600.000 iterasi (rekomendasi OWASP 2023+)
+#   Enkripsi      : AES-256-CBC dengan salt acak
+#   Integritas    : HMAC-SHA256 encrypt-then-MAC, kunci terpisah
+#
+# KENAPA ENCRYPT-THEN-MAC
+#   `openssl enc` di CLI TIDAK mendukung AES-GCM. Tanpa MAC, ciphertext CBC bisa
+#   diubah penyerang tanpa terdeteksi (bit-flipping). Jadi MAC ditambahkan manual
+#   dan diperiksa SEBELUM dekripsi, memakai perbandingan waktu-tetap.
+#
+# BATASAN — baca sebelum percaya
+#   Ini melindungi berkas SAAT DIAM (di disk, di backup, di /sdcard). Ia TIDAK
+#   melindungi dari: keylogger, proses lain yang membaca memori, shell history,
+#   atau kredensial yang sudah terlanjur bocor. Enkripsi ≠ rotasi.
+#
+# Copyright (c) 2026 Ivan Ssl (ivansslo). All rights reserved.
+
+set -euo pipefail
+umask 077
+
+ITER=600000
+MAGIC="ROCVAULT1"
+
+c_red=$'\033[31m'; c_grn=$'\033[32m'; c_yel=$'\033[33m'; c_rst=$'\033[0m'
+die()  { printf '%s✗ %s%s\n' "$c_red" "$*" "$c_rst" >&2; exit 1; }
+ok()   { printf '%s✓%s %s\n' "$c_grn" "$c_rst" "$*"; }
+warn() { printf '%s⚠%s  %s\n' "$c_yel" "$c_rst" "$*" >&2; }
+
+command -v openssl >/dev/null || die "openssl tidak ditemukan"
+
+usage() {
+  cat <<'EOF'
+rocvault — kunci berkas .env dengan openssl
+
+  rocvault lock   <plain> [terenkripsi]   Enkripsi (default: <plain>.vault)
+  rocvault unlock <terenkripsi> [keluar]  Dekripsi (default: stdout)
+  rocvault edit   <terenkripsi>           Buka di editor, enkripsi ulang saat simpan
+  rocvault run    <terenkripsi> -- CMD    Jalankan CMD dengan env dari vault
+  rocvault check  <terenkripsi>           Uji integritas tanpa menampilkan isi
+  rocvault rotate <terenkripsi>           Ganti passphrase
+
+Passphrase dibaca dari prompt, atau dari $ROCVAULT_PASS bila diset.
+Jangan taruh passphrase di command line — ia terlihat di `ps` dan history.
+EOF
+}
+
+# Baca passphrase. Prompt tidak menggemakan ketikan.
+read_pass() {
+  local prompt="$1" confirm="${2:-no}" p1 p2
+  if [ -n "${ROCVAULT_PASS:-}" ]; then printf '%s' "$ROCVAULT_PASS"; return; fi
+  [ -t 0 ] || die "Tidak ada terminal untuk membaca passphrase. Set ROCVAULT_PASS."
+  read -r -s -p "$prompt" p1 </dev/tty; printf '\n' >&2
+  [ -n "$p1" ] || die "Passphrase kosong"
+  if [ "$confirm" = yes ]; then
+    read -r -s -p "Ulangi passphrase: " p2 </dev/tty; printf '\n' >&2
+    [ "$p1" = "$p2" ] || die "Passphrase tidak cocok"
+    if [ "${#p1}" -lt 12 ]; then
+      die "Passphrase terlalu pendek (${#p1} karakter, minimal 12).
+  Saran: 4-5 kata acak lebih kuat dan lebih mudah diingat daripada 'P@ssw0rd'."
+    fi
+  fi
+  printf '%s' "$p1"
+}
+
+# Turunkan dua kunci terpisah dari satu passphrase: satu untuk enkripsi, satu untuk MAC.
+# Memakai kunci yang sama untuk keduanya adalah kesalahan kripto klasik.
+derive_keys() {
+  local pass="$1" salt_hex="$2" out
+  out=$(printf '%s' "$pass" | openssl kdf -keylen 64 -kdfopt digest:SHA512 \
+        -kdfopt "hexsalt:$salt_hex" -kdfopt "pass:$pass" -kdfopt "iter:$ITER" \
+        -binary PBKDF2 2>/dev/null | od -An -tx1 -v | tr -d ' \n') || return 1
+  printf '%s' "$out"
+}
+
+cmd_lock() {
+  local plain="${1:-}" enc="${2:-}"
+  [ -n "$plain" ] || die "Sebutkan berkas: rocvault lock .env"
+  [ -f "$plain" ] || die "Tidak ada: $plain"
+  enc="${enc:-${plain}.vault}"
+  [ -e "$enc" ] && die "Sudah ada: $enc (hapus dulu bila memang mau ditimpa)"
+
+  local pass; pass=$(read_pass "Passphrase baru: " yes)
+  local salt_hex; salt_hex=$(openssl rand -hex 16)
+  local keys; keys=$(derive_keys "$pass" "$salt_hex") || die "Gagal menurunkan kunci"
+  local kenc="${keys:0:64}" kmac="${keys:64:64}"
+  local iv_hex; iv_hex=$(openssl rand -hex 16)
+
+  local tmp; tmp=$(mktemp); trap 'rm -f "$tmp" "$tmp.ct"' RETURN
+  openssl enc -aes-256-cbc -K "$kenc" -iv "$iv_hex" -in "$plain" -out "$tmp.ct" \
+    || die "Enkripsi gagal"
+
+  # MAC menutupi header + IV + ciphertext, jadi parameter tidak bisa dimanipulasi.
+  { printf '%s\n%s\n%s\n' "$MAGIC" "$salt_hex" "$iv_hex"; cat "$tmp.ct"; } > "$tmp"
+  local mac; mac=$(openssl dgst -sha256 -mac HMAC -macopt "hexkey:$kmac" -binary < "$tmp" | od -An -tx1 -v | tr -d ' \n')
+
+  { cat "$tmp"; printf '\n%s\n' "$mac"; } > "$enc"
+  chmod 600 "$enc"
+
+  ok "Terenkripsi -> $enc ($(wc -c < "$enc") byte, mode 600)"
+  warn "Berkas asli '$plain' MASIH ADA dan belum terenkripsi."
+  printf '  Hapus dengan aman:  shred -u %s   (atau: rm -P %s di Termux)\n' "$plain" "$plain"
+}
+
+# Baca vault, verifikasi MAC, keluarkan plaintext ke stdout.
+vault_open() {
+  local enc="$1" pass="$2"
+  [ -f "$enc" ] || die "Tidak ada: $enc"
+
+  local magic; magic=$(head -1 "$enc")
+  [ "$magic" = "$MAGIC" ] || die "Bukan berkas rocvault (header: $magic)"
+
+  local salt_hex iv_hex mac_stored
+  salt_hex=$(sed -n '2p' "$enc")
+  iv_hex=$(sed -n '3p' "$enc")
+  mac_stored=$(tail -1 "$enc")
+
+  local keys; keys=$(derive_keys "$pass" "$salt_hex") || die "Gagal menurunkan kunci"
+  local kenc="${keys:0:64}" kmac="${keys:64:64}"
+
+  local total body tmp
+  total=$(wc -l < "$enc")
+  tmp=$(mktemp); trap 'rm -f "$tmp"' RETURN
+  # Semua baris kecuali MAC di baris terakhir.
+  head -n $((total - 1)) "$enc" > "$tmp"
+  # head membuang newline terakhir; kembalikan persis seperti saat MAC dihitung.
+  truncate -s -1 "$tmp"
+
+  local mac_calc; mac_calc=$(openssl dgst -sha256 -mac HMAC -macopt "hexkey:$kmac" -binary < "$tmp" | od -An -tx1 -v | tr -d ' \n')
+
+  # Perbandingan waktu-tetap: jangan bocorkan berapa banyak byte yang cocok.
+  if ! python3 -c "import hmac,sys; sys.exit(0 if hmac.compare_digest(sys.argv[1],sys.argv[2]) else 1)" \
+       "$mac_calc" "$mac_stored" 2>/dev/null; then
+    die "VERIFIKASI GAGAL. Passphrase salah, atau berkas telah diubah.
+  Berkas TIDAK didekripsi — ini disengaja."
+  fi
+
+  tail -n +4 "$tmp" | openssl enc -d -aes-256-cbc -K "$kenc" -iv "$iv_hex" \
+    || die "Dekripsi gagal meski MAC valid (berkas rusak?)"
+}
+
+cmd_unlock() {
+  local enc="${1:-}" out="${2:-}"
+  [ -n "$enc" ] || die "Sebutkan berkas: rocvault unlock .env.vault"
+  local pass; pass=$(read_pass "Passphrase: ")
+  if [ -n "$out" ]; then
+    (umask 077; vault_open "$enc" "$pass" > "$out")
+    chmod 600 "$out"; ok "Didekripsi -> $out (mode 600)"
+    warn "Jangan lupa hapus '$out' setelah selesai."
+  else
+    vault_open "$enc" "$pass"
+  fi
+}
+
+cmd_check() {
+  local enc="${1:-}"
+  [ -n "$enc" ] || die "Sebutkan berkas"
+  local pass; pass=$(read_pass "Passphrase: ")
+  local n; n=$(vault_open "$enc" "$pass" | grep -cE '^[A-Za-z_][A-Za-z0-9_]*=' || true)
+  ok "Integritas OK. Berisi $n variabel. (isi tidak ditampilkan)"
+}
+
+cmd_edit() {
+  local enc="${1:-}"
+  [ -n "$enc" ] || die "Sebutkan berkas"
+  local pass; pass=$(read_pass "Passphrase: ")
+  local dir tmp
+  # Utamakan tmpfs supaya plaintext tidak pernah menyentuh disk permanen.
+  dir=$([ -d /dev/shm ] && echo /dev/shm || echo "${TMPDIR:-/tmp}")
+  tmp=$(mktemp "$dir/rocvault.XXXXXX")
+  trap 'shred -u "$tmp" 2>/dev/null || rm -f "$tmp"' EXIT
+
+  vault_open "$enc" "$pass" > "$tmp"
+  local before; before=$(sha256sum < "$tmp")
+  "${EDITOR:-nano}" "$tmp"
+  local after; after=$(sha256sum < "$tmp")
+  if [ "$before" = "$after" ]; then ok "Tidak ada perubahan"; return 0; fi
+
+  local salt_hex iv_hex keys kenc kmac ct mac
+  salt_hex=$(openssl rand -hex 16); iv_hex=$(openssl rand -hex 16)
+  keys=$(derive_keys "$pass" "$salt_hex"); kenc="${keys:0:64}"; kmac="${keys:64:64}"
+  ct=$(mktemp); openssl enc -aes-256-cbc -K "$kenc" -iv "$iv_hex" -in "$tmp" -out "$ct"
+  local body; body=$(mktemp)
+  { printf '%s\n%s\n%s\n' "$MAGIC" "$salt_hex" "$iv_hex"; cat "$ct"; } > "$body"
+  mac=$(openssl dgst -sha256 -mac HMAC -macopt "hexkey:$kmac" -binary < "$body" | od -An -tx1 -v | tr -d ' \n')
+  { cat "$body"; printf '\n%s\n' "$mac"; } > "$enc"
+  chmod 600 "$enc"; rm -f "$ct" "$body"
+  ok "Disimpan ulang terenkripsi"
+}
+
+cmd_run() {
+  local enc="${1:-}"; shift || true
+  [ "${1:-}" = "--" ] && shift
+  [ -n "$enc" ] && [ $# -ge 1 ] || die "Pakai: rocvault run .env.vault -- npm start"
+  local pass; pass=$(read_pass "Passphrase: ")
+  local plain; plain=$(vault_open "$enc" "$pass")
+  # Env diteruskan lewat memori proses, tidak pernah ditulis ke disk.
+  local -a envs=()
+  while IFS= read -r line; do
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+    [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
+    envs+=("$line")
+  done <<< "$plain"
+  ok "Memuat ${#envs[@]} variabel ke proses anak"
+  env "${envs[@]}" "$@"
+}
+
+cmd_rotate() {
+  local enc="${1:-}"
+  [ -n "$enc" ] || die "Sebutkan berkas"
+  local oldp; oldp=$(read_pass "Passphrase LAMA: ")
+  local plain; plain=$(vault_open "$enc" "$oldp")
+  local newp; newp=$(read_pass "Passphrase BARU: " yes)
+
+  local salt_hex iv_hex keys kenc kmac tmp ct body mac
+  salt_hex=$(openssl rand -hex 16); iv_hex=$(openssl rand -hex 16)
+  keys=$(derive_keys "$newp" "$salt_hex"); kenc="${keys:0:64}"; kmac="${keys:64:64}"
+  tmp=$(mktemp); printf '%s\n' "$plain" > "$tmp"
+  ct=$(mktemp); openssl enc -aes-256-cbc -K "$kenc" -iv "$iv_hex" -in "$tmp" -out "$ct"
+  body=$(mktemp)
+  { printf '%s\n%s\n%s\n' "$MAGIC" "$salt_hex" "$iv_hex"; cat "$ct"; } > "$body"
+  mac=$(openssl dgst -sha256 -mac HMAC -macopt "hexkey:$kmac" -binary < "$body" | od -An -tx1 -v | tr -d ' \n')
+  cp "$enc" "$enc.bak"
+  { cat "$body"; printf '\n%s\n' "$mac"; } > "$enc"
+  chmod 600 "$enc"
+  shred -u "$tmp" 2>/dev/null || rm -f "$tmp"; rm -f "$ct" "$body"
+  ok "Passphrase diganti. Cadangan lama: $enc.bak (hapus setelah yakin)"
+}
+
+main() {
+  local cmd="${1:-}"; shift || true
+  case "$cmd" in
+    lock)   cmd_lock   "$@" ;;
+    unlock) cmd_unlock "$@" ;;
+    check)  cmd_check  "$@" ;;
+    edit)   cmd_edit   "$@" ;;
+    run)    cmd_run    "$@" ;;
+    rotate) cmd_rotate "$@" ;;
+    ""|-h|--help|help) usage ;;
+    *) die "Perintah tidak dikenal: $cmd" ;;
+  esac
+}
+
+main "$@"

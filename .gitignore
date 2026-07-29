@@ -20,3 +20,15 @@ sessions/
 *~
 pastebinjs_*
 pastebinpy_*
+
+# --- Rahasia: jangan pernah ter-commit ---
+*.env
+!*.env.template
+!.env.example
+*.vault.bak
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+.oci/
+secrets/

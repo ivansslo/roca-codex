@@ -1,0 +1,288 @@
+#!/usr/bin/env bash
+# rocagent-vm — kelola RocAgent di VM Oracle dari Termux, tanpa masuk shell VM.
+#
+# Pola yang dipakai sama dengan `docker --host ssh://...` yang sudah kamu jalankan:
+# perintah diketik di Termux, dieksekusi di VM, output kembali ke Termux.
+#
+# Bedanya dengan Docker: Docker punya protokol client-server sendiri, jadi
+# `docker --host ssh://` itu fitur bawaan Docker. Git dan npm TIDAK punya itu.
+# Untuk git/npm, jembatannya adalah SSH remote command — persis seperti yang
+# dilakukan skrip ini di balik layar.
+#
+# Copyright (c) 2026 Ivan Ssl (ivansslo). All rights reserved.
+
+set -euo pipefail
+
+VM_HOST="${ROCAGENT_VM_HOST:-100.125.151.105}"
+VM_USER="${ROCAGENT_VM_USER:-ubuntu}"
+VM_DIR="${ROCAGENT_VM_DIR:-/home/ubuntu/RocAgent}"
+REPO_SSH="git@github.com:ivansslo/RocAgent.git"
+PORT="${ROCAGENT_PORT:-3000}"
+
+TARGET="${VM_USER}@${VM_HOST}"
+
+c_red=$'\033[31m'; c_grn=$'\033[32m'; c_yel=$'\033[33m'; c_dim=$'\033[2m'; c_rst=$'\033[0m'
+
+die()  { printf '%s✗ %s%s\n' "$c_red" "$*" "$c_rst" >&2; exit 1; }
+ok()   { printf '%s✓%s %s\n' "$c_grn" "$c_rst" "$*"; }
+warn() { printf '%s⚠%s  %s\n' "$c_yel" "$c_rst" "$*"; }
+step() { printf '\n%s── %s ──%s\n' "$c_dim" "$*" "$c_rst"; }
+
+# Jalankan perintah di VM. Tidak pakai -t supaya output bisa di-pipe.
+vm() { ssh -o BatchMode=yes -o ConnectTimeout=10 "$TARGET" "$@"; }
+
+require_link() {
+  vm 'echo ok' >/dev/null 2>&1 || die "Tidak bisa SSH ke $TARGET.
+  Periksa:  tailscale status
+  Uji:      ssh $TARGET 'echo ok'"
+}
+
+usage() {
+  cat <<EOF
+rocagent-vm — kelola RocAgent di VM dari Termux
+
+  status              Cek koneksi, versi Node, RAM, disk, commit di VM
+  clone               Clone repo ke VM (butuh deploy key, lihat 'setup-key')
+  setup-key           Buat kunci SSH di VM untuk akses GitHub, tampilkan pubkey
+  pull                git pull di VM
+  review [N]          Tampilkan N commit terakhir + statistik (default 3)
+  diff [REF]          Tampilkan diff di VM (default: 20fa310..HEAD)
+  show <FILE>         Tampilkan isi file dari VM
+  install             npm install di VM
+  build               npm run build di VM (butuh ~650MB RAM, cek swap dulu)
+  test                npm test di VM
+  start               Jalankan server di VM sebagai layanan systemd
+  stop                Hentikan layanan
+  logs [N]            Tail log server (default 50 baris)
+  open                Tunnel port VM ke localhost Termux, lalu buka di browser
+  exec <CMD...>       Jalankan perintah apa pun di dalam direktori repo di VM
+
+Environment:
+  ROCAGENT_VM_HOST   default 100.125.151.105
+  ROCAGENT_VM_USER   default ubuntu
+  ROCAGENT_VM_DIR    default /home/ubuntu/RocAgent
+  ROCAGENT_PORT      default 3000
+EOF
+}
+
+cmd_status() {
+  step "Koneksi"
+  require_link
+  ok "SSH ke $TARGET berhasil"
+
+  step "VM"
+  # shellcheck disable=SC2016  # sengaja: $(...) harus dievaluasi DI VM, bukan lokal
+  vm 'printf "  host      : %s\n" "$(hostname)"
+      printf "  kernel    : %s\n" "$(uname -r)"
+      printf "  node      : %s\n" "$(command -v node >/dev/null && node --version || echo "BELUM TERPASANG")"
+      printf "  npm       : %s\n" "$(command -v npm  >/dev/null && npm  --version || echo "BELUM TERPASANG")"
+      printf "  git       : %s\n" "$(git --version 2>/dev/null | cut -d" " -f3 || echo "-")"
+      printf "  RAM       : %s\n" "$(free -h | awk "/^Mem:/ {print \$3\" terpakai / \"\$2\" total, \"\$7\" tersedia\"}")"
+      printf "  swap      : %s\n" "$(free -h | awk "/^Swap:/ {print \$3\" / \"\$2}")"
+      printf "  disk      : %s\n" "$(df -h / | awk "NR==2 {print \$4\" bebas dari \"\$2}")"'
+
+  step "Repo di VM"
+  if vm "test -d '$VM_DIR/.git'"; then
+    vm "cd '$VM_DIR' && printf '  commit    : %s\n' \"\$(git log --oneline -1)\" \
+        && printf '  branch    : %s\n' \"\$(git rev-parse --abbrev-ref HEAD)\" \
+        && printf '  perubahan : %s berkas\n' \"\$(git status --porcelain | wc -l)\" \
+        && printf '  deps      : %s\n' \"\$([ -d node_modules ] && du -sh node_modules 2>/dev/null | cut -f1 || echo 'belum install')\" \
+        && printf '  build     : %s\n' \"\$([ -f dist/server.cjs ] && echo 'ada' || echo 'belum build')\""
+  else
+    warn "Repo belum ada di $VM_DIR — jalankan: rocagent-vm clone"
+  fi
+
+  step "Layanan"
+  if vm 'systemctl --user is-active rocagent' >/dev/null 2>&1; then
+    ok "rocagent aktif"
+  else
+    printf '  tidak berjalan\n'
+  fi
+}
+
+cmd_setup_key() {
+  require_link
+  step "Kunci SSH di VM untuk akses GitHub"
+  # shellcheck disable=SC2016  # sengaja: $(date) dan ~ dievaluasi di VM
+  vm 'test -f ~/.ssh/id_ed25519 || ssh-keygen -t ed25519 -N "" -C "rocagent-vm-$(date +%Y%m%d)" -f ~/.ssh/id_ed25519 >/dev/null'
+  vm 'ssh-keyscan -t ed25519 github.com 2>/dev/null >> ~/.ssh/known_hosts.tmp
+      sort -u ~/.ssh/known_hosts.tmp >> ~/.ssh/known_hosts 2>/dev/null || true
+      rm -f ~/.ssh/known_hosts.tmp
+      sort -u -o ~/.ssh/known_hosts ~/.ssh/known_hosts'
+  echo
+  echo "Tambahkan kunci ini sebagai DEPLOY KEY (read-only) di GitHub:"
+  echo "  https://github.com/ivansslo/RocAgent/settings/keys/new"
+  echo
+  printf '%s\n' "$(vm 'cat ~/.ssh/id_ed25519.pub')"
+  echo
+  warn "Pakai deploy key per-repo, bukan PAT akun. Kalau VM disusupi,"
+  warn "yang bocor hanya akses baca satu repo, bukan seluruh akunmu."
+  echo
+  echo "Sesudah itu jalankan: rocagent-vm clone"
+}
+
+cmd_clone() {
+  require_link
+  if vm "test -d '$VM_DIR/.git'"; then
+    ok "Repo sudah ada di $VM_DIR"
+    return 0
+  fi
+  step "Clone ke VM"
+  vm "git clone '$REPO_SSH' '$VM_DIR'" \
+    || die "Clone gagal. Kalau errornya 'Permission denied (publickey)',
+  jalankan dulu: rocagent-vm setup-key"
+  ok "Ter-clone ke $VM_DIR"
+  vm "cd '$VM_DIR' && git log --oneline -3"
+}
+
+cmd_pull()   { require_link; vm "cd '$VM_DIR' && git pull --ff-only"; }
+
+cmd_review() {
+  require_link
+  local n="${1:-3}"
+  step "$n commit terakhir di VM"
+  vm "cd '$VM_DIR' && git log --oneline -$n --stat | head -60"
+}
+
+cmd_diff() {
+  require_link
+  local ref="${1:-20fa310..HEAD}"
+  vm "cd '$VM_DIR' && git diff $ref --stat && echo && git diff $ref | head -400"
+}
+
+cmd_show() {
+  [ $# -ge 1 ] || die "Sebutkan berkasnya: rocagent-vm show server/commandGuard.ts"
+  require_link
+  vm "cd '$VM_DIR' && cat -- '$1'"
+}
+
+cmd_install() {
+  require_link
+  step "npm install di VM"
+  vm "cd '$VM_DIR' && npm install --no-audit --no-fund"
+}
+
+cmd_build() {
+  require_link
+  step "Pemeriksaan memori sebelum build"
+  # Build memuncak sekitar 646 MB pada mesin uji. VM E2.1.Micro punya 1 GB.
+  local avail swap
+  avail=$(vm "free -m | awk '/^Mem:/ {print \$7}'")
+  swap=$(vm "free -m | awk '/^Swap:/ {print \$2}'")
+  printf '  RAM tersedia : %s MB\n  swap         : %s MB\n' "$avail" "$swap"
+  if [ "${avail:-0}" -lt 700 ] && [ "${swap:-0}" -lt 1024 ]; then
+    die "RAM tersedia $avail MB, swap $swap MB. Build butuh sekitar 650 MB.
+  Aktifkan swap dulu di VM, atau build di Termux lalu kirim dist/ ke VM."
+  fi
+  [ "${avail:-0}" -lt 700 ] && warn "RAM tipis — build akan memakai swap, jadi lambat tapi tetap jalan"
+
+  step "npm run build di VM"
+  vm "cd '$VM_DIR' && NODE_OPTIONS=--max-old-space-size=768 npm run build"
+}
+
+cmd_test() { require_link; vm "cd '$VM_DIR' && npm test"; }
+
+cmd_start() {
+  require_link
+  step "Menyiapkan layanan systemd (user scope)"
+  vm "test -f '$VM_DIR/.env'" \
+    || die "Belum ada $VM_DIR/.env di VM.
+  Buat dulu, WAJIB berisi WEB_PASSWORD minimal 12 karakter:
+    rocagent-vm exec 'cp .env.example .env && nano .env'
+  Atau hasilkan otomatis:
+    rocagent-vm exec 'cp .env.example .env && sed -i \"s|^WEB_PASSWORD=.*|WEB_PASSWORD=\$(openssl rand -base64 24)|\" .env'"
+
+  vm "grep -qE '^WEB_PASSWORD=.{12,}' '$VM_DIR/.env'" \
+    || die "WEB_PASSWORD di .env kosong atau kurang dari 12 karakter. Server akan menolak start."
+
+  vm "mkdir -p ~/.config/systemd/user && cat > ~/.config/systemd/user/rocagent.service <<'UNIT'
+[Unit]
+Description=RocAgent
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$VM_DIR
+EnvironmentFile=$VM_DIR/.env
+ExecStart=/usr/bin/node $VM_DIR/dist/server.cjs
+Restart=on-failure
+RestartSec=5
+# Server ini mengeksekusi perintah shell. Batasi seminimal mungkin.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=$VM_DIR
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=default.target
+UNIT
+  systemctl --user daemon-reload
+  systemctl --user enable --now rocagent
+  loginctl enable-linger \$USER 2>/dev/null || true"
+  sleep 2
+  if vm 'systemctl --user is-active rocagent' >/dev/null 2>&1; then
+    ok "Layanan berjalan. Lihat log: rocagent-vm logs"
+  else
+    warn "Layanan gagal start. Log:"
+    vm 'journalctl --user -u rocagent -n 30 --no-pager'
+    return 1
+  fi
+}
+
+cmd_stop() {
+  require_link
+  if vm 'systemctl --user stop rocagent'; then ok "Dihentikan"; else die "Gagal menghentikan layanan"; fi
+}
+
+cmd_logs() {
+  require_link
+  vm "journalctl --user -u rocagent -n ${1:-50} --no-pager"
+}
+
+cmd_open() {
+  require_link
+  step "Tunnel ke Termux"
+  echo "  VM 127.0.0.1:$PORT  ->  Termux 127.0.0.1:$PORT"
+  echo "  Buka di browser HP: http://127.0.0.1:$PORT"
+  echo "  Tekan Ctrl-C untuk menutup tunnel."
+  echo
+  # Server di VM bind ke 127.0.0.1 saja. Tunnel ini satu-satunya jalan masuk,
+  # dan hanya ada selama perintah ini berjalan.
+  ssh -N -L "127.0.0.1:${PORT}:127.0.0.1:${PORT}" "$TARGET"
+}
+
+cmd_exec() {
+  [ $# -ge 1 ] || die "Sebutkan perintahnya: rocagent-vm exec 'git status'"
+  require_link
+  vm "cd '$VM_DIR' && $*"
+}
+
+main() {
+  local cmd="${1:-}"; shift || true
+  case "$cmd" in
+    status)     cmd_status ;;
+    setup-key)  cmd_setup_key ;;
+    clone)      cmd_clone ;;
+    pull)       cmd_pull ;;
+    review)     cmd_review "$@" ;;
+    diff)       cmd_diff "$@" ;;
+    show)       cmd_show "$@" ;;
+    install)    cmd_install ;;
+    build)      cmd_build ;;
+    test)       cmd_test ;;
+    start)      cmd_start ;;
+    stop)       cmd_stop ;;
+    logs)       cmd_logs "$@" ;;
+    open)       cmd_open ;;
+    exec)       cmd_exec "$@" ;;
+    ""|-h|--help|help) usage ;;
+    *) die "Perintah tidak dikenal: $cmd  (jalankan tanpa argumen untuk bantuan)" ;;
+  esac
+}
+
+main "$@"
