@@ -316,10 +316,14 @@ rocvault lock ~/.config/rocagent/personal.env
 > bash tools/recover-env.sh
 > ```
 
-Menjalankan:
+Menjalankan — perhatikan `cd` di depannya:
 ```bash
+cd ~/RocAgent
 rocvault run ~/.config/rocagent/app.env.vault -- npm start
 ```
+
+`rocvault run` menjalankan perintah di direktori saat ini. Dari `~`, npm akan
+mencari `package.json` di `~` dan gagal dengan `ENOENT`.
 
 ### 3. Bersihkan jejak
 

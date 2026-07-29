@@ -253,19 +253,58 @@ cmd_edit() {
 cmd_run() {
   local enc="${1:-}"; shift || true
   [ "${1:-}" = "--" ] && shift
-  [ -n "$enc" ] && [ $# -ge 1 ] || die "Pakai: rocvault run .env.vault -- npm start"
+  [ -n "$enc" ] && [ $# -ge 1 ] || die "Pakai: rocvault run .env.vault -- <perintah>
+  Contoh (jalankan DARI direktori proyek):
+    cd ~/RocAgent && rocvault run ~/.config/rocagent/app.env.vault -- npm start"
   local pass; pass=$(read_pass "Passphrase: ")
   local plain; plain=$(vault_open "$enc" "$pass")
   # Env diteruskan lewat memori proses, tidak pernah ditulis ke disk.
   local -a envs=()
+  local -a aneh=()
+  local lineno=0
   while IFS= read -r line; do
+    lineno=$((lineno+1))
     [[ "$line" =~ ^[[:space:]]*# ]] && continue
     [[ "$line" =~ ^[[:space:]]*$ ]] && continue
-    [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
-    envs+=("$line")
+    if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+      # Nama variabel yang memuat '=' kedua di posisi nama biasanya salah ketik,
+      # mis. MONGODB=PASS= yang dimaksudkan MONGODB_PASS=. Shell menerimanya
+      # sebagai MONGODB bernilai "PASS=", jadi tidak ada error — hanya nilai
+      # yang salah, diam-diam.
+      local nama="${line%%=*}" sisa="${line#*=}"
+      if [[ "$sisa" =~ ^[A-Z_]+=$ ]]; then
+        aneh+=("baris $lineno: $nama=$sisa  (maksudmu ${nama}_${sisa%=}= ?)")
+      fi
+      envs+=("$line")
+    else
+      aneh+=("baris $lineno: bukan VAR=nilai -> ${line:0:40}")
+    fi
   done <<< "$plain"
+
+  if [ ${#aneh[@]} -gt 0 ]; then
+    warn "${#aneh[@]} baris mencurigakan di vault:"
+    printf '    %s\n' "${aneh[@]}" >&2
+    printf '    Perbaiki dengan: rocvault edit %s\n\n' "$enc" >&2
+  fi
+
   ok "Memuat ${#envs[@]} variabel ke proses anak"
-  env "${envs[@]}" "$@"
+
+  # Jalankan di direktori saat ini. Perintah seperti `npm start` bergantung pada
+  # cwd, dan kegagalan paling umum adalah menjalankannya dari HOME alih-alih
+  # dari direktori proyek.
+  # `|| rc=$?` mencegah set -e menghentikan skrip sebelum diagnostik di bawah
+  # sempat dicetak. Tanpa ini, kegagalan perintah langsung mengakhiri rocvault.
+  local rc=0
+  env "${envs[@]}" "$@" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\n' >&2
+    warn "Perintah keluar dengan kode $rc (dijalankan di: $PWD)"
+    case "$1" in
+      npm|npx|node|bun|yarn|pnpm)
+        [ -f package.json ] || printf '    Tidak ada package.json di sini. Untuk RocAgent:\n      cd ~/RocAgent && rocvault run %s -- %s\n' "$enc" "$*" >&2 ;;
+    esac
+  fi
+  return "$rc"
 }
 
 cmd_rotate() {

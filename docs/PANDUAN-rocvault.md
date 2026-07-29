@@ -65,6 +65,7 @@ rocvault check  app.env.vault                   # uji integritas, isi tidak tamp
 rocvault edit   app.env.vault                   # edit lalu enkripsi ulang otomatis
 rocvault rotate app.env.vault                   # ganti passphrase
 rocvault run    app.env.vault -- npm start      # jalankan tanpa menulis plaintext
+                                                # (dari dalam direktori proyek)
 ```
 
 `run` adalah cara terbaik. Rahasia masuk ke memori proses anak dan **tidak
@@ -82,7 +83,8 @@ nano ~/.config/rocagent/app.env          # isi nilai hasil rotasi
 rocvault lock ~/.config/rocagent/app.env
 # lock memverifikasi vault dulu, lalu menanyakan apakah plaintext dihapus
 
-# Setiap kali menjalankan
+# Setiap kali menjalankan — WAJIB dari dalam direktori proyek,
+# karena npm mencari package.json di direktori saat ini
 cd ~/RocAgent
 rocvault run ~/.config/rocagent/app.env.vault -- npm start
 

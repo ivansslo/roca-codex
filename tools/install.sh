@@ -226,6 +226,7 @@ printf 'Langkah berikutnya:\n'
 printf '  1. Isi kunci model     -> nano %s/app.env\n' "$CFG_DIR"
 printf '  2. Rotasi kredensial   -> docs/ROTASI-KREDENSIAL-URGENT.md\n'
 printf '  3. Kunci berkasnya     -> rocvault lock %s/app.env\n' "$CFG_DIR"
-printf '  4. Jalankan            -> rocvault run %s/app.env.vault -- npm start\n\n' "$CFG_DIR"
+printf '  4. Jalankan            -> cd ~/RocAgent && rocvault run %s/app.env.vault -- npm start\n' "$CFG_DIR"
+printf '     (harus dari dalam ~/RocAgent — npm mencari package.json di direktori saat ini)\n\n'
 
 printf '%sJangan pernah menaruh berkas ini di /sdcard%s — aplikasi lain bisa membacanya.\n\n' "$c_yel" "$c_rst"
