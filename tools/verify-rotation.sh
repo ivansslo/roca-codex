@@ -127,6 +127,36 @@ uji_cloudflare() {
   info 'Ada 5 token Cloudflare di env lamamu — uji semuanya.'
 }
 
+uji_r2() {
+  printf '\n── 3b. Cloudflare R2 (S3-compatible) ──\n'
+  info 'Menguji ACCESS KEY BARU, bukan yang lama — R2 tidak punya endpoint'
+  info 'verifikasi token, jadi yang bisa diuji adalah apakah kunci baru BEKERJA.'
+  local akid sak acct
+  akid=$(baca 'Access Key ID: ')
+  [ -n "$akid" ] || { info 'dilewati'; return; }
+  sak=$(baca 'Secret Access Key: ')
+  acct=$(baca 'Account ID: ')
+  [ -n "$sak" ] && [ -n "$acct" ] || { info 'dilewati (perlu ketiganya)'; return; }
+
+  command -v aws >/dev/null || {
+    info 'aws-cli tidak terpasang. Uji manual:'
+    printf '    pip install awscli\n'
+    printf '    AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \\\n'
+    printf '      aws s3 ls --endpoint-url https://%s.r2.cloudflarestorage.com\n' "$acct"
+    return
+  }
+  local out
+  out=$(AWS_ACCESS_KEY_ID="$akid" AWS_SECRET_ACCESS_KEY="$sak" AWS_DEFAULT_REGION=auto \
+        aws s3 ls --endpoint-url "https://$acct.r2.cloudflarestorage.com" 2>&1)
+  if printf '%s' "$out" | grep -qiE 'InvalidAccessKeyId|SignatureDoesNotMatch|AccessDenied'; then
+    printf '  %s✗ DITOLAK%s — kunci salah atau tidak berizin\n' "$c_red" "$c_rst"
+    printf '    %s\n' "$(printf '%s' "$out" | head -1)"
+  else
+    printf '  %s✓ BEKERJA%s — kunci baru diterima R2\n' "$c_grn" "$c_rst"
+    printf '%s' "$out" | head -5 | sed 's/^/    /'
+  fi
+}
+
 uji_github() {
   printf '\n── 4. GitHub ──\n'
   info 'Rotasi di: https://github.com/settings/tokens'
@@ -161,7 +191,7 @@ menu() {
 
   verify-rotation.sh — buktikan kunci LAMA sudah mati
 
-    1  openai       2  aiven        3  cloudflare
+    1  openai       2  aiven        3  cloudflare   3b r2 (uji kunci BARU)
     4  github       5  tailscale    a  semua
 
   Kunci hanya dibaca ke memori. Tidak ditulis ke berkas mana pun.
@@ -173,6 +203,7 @@ EOF
     1|openai)     uji_openai ;;
     2|aiven)      uji_aiven ;;
     3|cloudflare) uji_cloudflare ;;
+    3b|r2)        uji_r2 ;;
     4|github)     uji_github ;;
     5|tailscale)  uji_tailscale ;;
     a|all|semua)  uji_openai; uji_aiven; uji_cloudflare; uji_github; uji_tailscale ;;
@@ -184,6 +215,7 @@ case "${1:-}" in
   openai)     uji_openai ;;
   aiven)      uji_aiven ;;
   cloudflare) uji_cloudflare ;;
+  r2)         uji_r2 ;;
   github)     uji_github ;;
   tailscale)  uji_tailscale ;;
   all|semua)  uji_openai; uji_aiven; uji_cloudflare; uji_github; uji_tailscale ;;

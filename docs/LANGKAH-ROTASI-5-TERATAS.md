@@ -174,11 +174,44 @@ Ada **5 token** terpapar: `CF_API_TOKEN`, `CF_TOKEN`, `CF_AI_TOKEN`, `CFAT`,
    # 200 = baik
    ```
 
-### Sekalian: kunci R2
+### Sekalian: kunci R2 (S3-compatible)
 
 `CF_R2_ACCESS` dan `CF_R2_SECRET` juga bocor — itu kredensial penyimpanan objek.
 
 R2 → **Manage R2 API Tokens** → hapus yang lama, buat baru.
+
+Cloudflare menampilkan Secret Access Key **satu kali saja**. Kalau terlewat,
+tidak ada cara melihatnya lagi — harus buat token baru.
+
+Simpan dengan penamaan yang konsisten. `CF_R2_*` dan `CF_S3_*` merujuk
+kredensial yang sama (R2 memakai protokol S3); menyimpan keduanya membuat salah
+satu basi tanpa ketahuan. Pilih satu:
+
+```
+CF_R2_ACCESS_KEY_ID=
+CF_R2_SECRET_ACCESS_KEY=
+CF_R2_ENDPOINT=https://<CF_ACCOUNT_ID>.r2.cloudflarestorage.com
+CF_R2_REGION=auto
+```
+
+Uji kunci barunya benar-benar bekerja:
+
+```bash
+bash tools/verify-rotation.sh r2
+```
+
+### Punya lebih dari satu token?
+
+Beri satu variabel per token, dinamai sesuai label di dashboard:
+
+```
+CF_TOKEN_WORKERS_AI=
+CF_TOKEN_ROYAL_LAB=
+```
+
+Jangan gabung jadi satu `CF_API_TOKEN`. Cakupan izin tiap token berbeda, dan
+menumpuknya di satu nama memaksa kamu memberi izin berlebih supaya semuanya
+muat.
 
 ### Periksa jejak penyalahgunaan
 
@@ -266,6 +299,20 @@ Terpapar: `TAILSCALE_KEY` (2 nilai) dan `TAILSCALE_AUTH_KEY`.
 
 > Auth key idealnya **tidak disimpan sama sekali**. Buat saat mendaftarkan
 > perangkat, pakai, lalu ia kedaluwarsa sendiri.
+
+### ⚠️ Dua jenis kunci, dua tempat berbeda
+
+Halaman Keys punya **dua bagian terpisah**, dan mudah menyelesaikan satu lalu
+mengira sudah beres:
+
+| Bagian | Fungsi | Cara mencabut |
+|---|---|---|
+| **Auth keys** | mendaftarkan perangkat baru ke tailnet | tombol per-kunci |
+| **API access tokens** | akses penuh ke Tailscale API — bisa membaca, menambah, **menghapus** perangkat | tombol **Revoke...** |
+
+Auth key habis masa berlaku sendiri; **API token tidak**. Ia hidup sampai
+dicabut manual. Pastikan bagian *API access tokens* juga kosong, bukan hanya
+*Auth keys*.
 
 ### Verifikasi
 
