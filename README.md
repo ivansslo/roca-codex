@@ -79,9 +79,23 @@ bash tools/install.sh
 source ~/.bashrc
 ```
 
-Installs `rocvault` and `rocagent-vm` into `~/.local/bin` and adds that
-directory to `PATH`. Checks dependencies first, including whether the local
-OpenSSL actually supports `kdf` and HMAC. Safe to re-run.
+Installs `rocvault` and `rocagent-vm` into `~/.local/bin`, adds that directory
+to `PATH`, and creates `~/.config/rocagent/` (mode 700) with three env files
+(mode 600) ready to edit:
+
+| File | Holds |
+|---|---|
+| `app.env` | `WEB_PASSWORD`, one model key, `PORT`, `HOST` — all RocAgent reads |
+| `cloud.env` | OCI, Cloudflare, Aiven, Neon |
+| `personal.env` | GitHub, GitLab, npm |
+
+Split deliberately: RocAgent only ever reads `app.env`, so compromising the
+server exposes one model key rather than your whole estate.
+
+`WEB_PASSWORD` is filled with `openssl rand -base64 24` on first run. Existing
+files are **never overwritten** — re-running only tightens permissions on them.
+Dependencies are checked first, including whether the local OpenSSL really
+supports `kdf` and HMAC.
 
 | Tool | Purpose |
 |---|---|

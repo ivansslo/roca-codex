@@ -13,6 +13,7 @@ c_red=$'\033[31m'; c_grn=$'\033[32m'; c_yel=$'\033[33m'; c_rst=$'\033[0m'
 ok()   { printf '%s✓%s %s\n' "$c_grn" "$c_rst" "$*"; }
 warn() { printf '%s⚠%s  %s\n' "$c_yel" "$c_rst" "$*"; }
 die()  { printf '%s✗ %s%s\n' "$c_red" "$*" "$c_rst" >&2; exit 1; }
+info() { printf '  %s\n' "$*"; }
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -112,7 +113,69 @@ for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
   fi
 done
 
-# ── 5. Verifikasi ─────────────────────────────────────────────────
+# ── 5. Direktori konfigurasi & berkas env ────────────────────────
+#
+# Rahasia dipisah tiga berkas dengan sengaja. RocAgent hanya membaca app.env,
+# jadi kalau server disusupi, yang bocor kunci model — bukan seluruh
+# infrastruktur.
+CFG_DIR="$HOME/.config/rocagent"
+
+printf '\nMenyiapkan %s...\n' "$CFG_DIR"
+mkdir -p "$CFG_DIR"
+chmod 700 "$CFG_DIR"
+ok "Direktori siap (mode 700 — hanya kamu yang bisa masuk)"
+
+CREATED=""
+SKIPPED=""
+PW_GENERATED=no
+for name in app cloud personal; do
+  target="$CFG_DIR/$name.env"
+  template="$SRC_DIR/../docs/$name.env.template"
+
+  if [ -e "$target" ]; then
+    # JANGAN PERNAH menimpa. Berkas ini mungkin sudah berisi rahasia asli;
+    # menimpanya sama saja menghancurkan kredensial pengguna.
+    chmod 600 "$target"
+    ok "$name.env sudah ada — dibiarkan, izin diperbaiki ke 600"
+    SKIPPED="$SKIPPED $name"
+    continue
+  fi
+
+  if [ -f "$template" ]; then
+    # umask memastikan berkas lahir dengan izin ketat, tidak ada jendela
+    # waktu di mana ia sempat terbaca proses lain.
+    (umask 077; cp "$template" "$target")
+    chmod 600 "$target"
+    ok "$name.env dibuat dari template (mode 600)"
+    CREATED="$CREATED $name"
+  else
+    warn "Template tidak ditemukan: $template"
+  fi
+done
+
+# WEB_PASSWORD wajib dan harus kuat. Mengisinya otomatis lebih baik daripada
+# membiarkan kosong — berkasmu yang lama memakai 'P@ssw0rd...' yang ada di
+# daftar tebakan umum.
+APP_ENV="$CFG_DIR/app.env"
+if [ -f "$APP_ENV" ] && grep -qE '^WEB_PASSWORD=[[:space:]]*$' "$APP_ENV"; then
+  GEN_PW=$(openssl rand -base64 24)
+  # Tulis lewat berkas sementara di direktori yang sama, lalu ganti secara
+  # atomik. `sed -i` pada berkas rahasia bisa meninggalkan sisa plaintext.
+  tmp_env=$(mktemp "$CFG_DIR/.app.env.XXXXXX")
+  chmod 600 "$tmp_env"
+  # Nilai base64 bisa memuat '/' dan '+', jadi jangan pakai sed dengan
+  # pembatas '/'. awk menghindari masalah escaping sepenuhnya.
+  awk -v pw="$GEN_PW" '
+    /^WEB_PASSWORD=[[:space:]]*$/ { print "WEB_PASSWORD=" pw; next }
+    { print }
+  ' "$APP_ENV" > "$tmp_env"
+  mv "$tmp_env" "$APP_ENV"
+  chmod 600 "$APP_ENV"
+  ok "WEB_PASSWORD diisi otomatis ($(printf '%s' "$GEN_PW" | wc -c) karakter acak)"
+  PW_GENERATED=yes
+fi
+
+# ── 6. Verifikasi ─────────────────────────────────────────────────
 printf '\nVerifikasi...\n'
 export PATH="$BIN_DIR:$PATH"
 FAIL=0
@@ -135,7 +198,23 @@ fi
 printf 'Perintah yang tersedia:\n'
 printf '  rocvault --help\n'
 printf '  rocagent-vm --help\n\n'
+printf 'Berkas konfigurasi (mode 600, di direktori mode 700):\n'
+printf '  %s/app.env       RocAgent: WEB_PASSWORD, 1 kunci model, PORT, HOST\n' "$CFG_DIR"
+printf '  %s/cloud.env     OCI, Cloudflare, Aiven, Neon\n' "$CFG_DIR"
+printf '  %s/personal.env  GitHub, GitLab, npm\n\n' "$CFG_DIR"
+if [ -n "$CREATED" ]; then printf 'Dibuat baru:%s\n' "$CREATED"; fi
+if [ -n "$SKIPPED" ]; then printf 'Sudah ada, tidak disentuh:%s\n' "$SKIPPED"; fi
+if [ -n "$CREATED" ] || [ -n "$SKIPPED" ]; then printf '\n'; fi
+
+if [ "$PW_GENERATED" = yes ]; then
+  printf '%sWEB_PASSWORD sudah diisi acak.%s Lihat dengan:\n' "$c_grn" "$c_rst"
+  printf '  grep WEB_PASSWORD %s/app.env\n\n' "$CFG_DIR"
+fi
+
 printf 'Langkah berikutnya:\n'
-printf '  1. Rotasi kredensial   -> docs/ROTASI-KREDENSIAL-URGENT.md\n'
-printf '  2. Buat env bersih     -> cp docs/app.env.template ~/.config/rocagent/app.env\n'
-printf '  3. Kunci               -> rocvault lock ~/.config/rocagent/app.env\n\n'
+printf '  1. Isi kunci model     -> nano %s/app.env\n' "$CFG_DIR"
+printf '  2. Rotasi kredensial   -> docs/ROTASI-KREDENSIAL-URGENT.md\n'
+printf '  3. Kunci berkasnya     -> rocvault lock %s/app.env\n' "$CFG_DIR"
+printf '  4. Jalankan            -> rocvault run %s/app.env.vault -- npm start\n\n' "$CFG_DIR"
+
+printf '%sJangan pernah menaruh berkas ini di /sdcard%s — aplikasi lain bisa membacanya.\n\n' "$c_yel" "$c_rst"
