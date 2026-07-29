@@ -90,6 +90,17 @@ OpenSSL actually supports `kdf` and HMAC. Safe to re-run.
 
 On the VM: `rocagent-vm pull && rocagent-vm setup-tools`
 
+### Termux drops you into an Ubuntu container on startup?
+
+An older `termux-rocd` installer appended an auto-launch block to `~/.bashrc`.
+RocAgent does not need it — the server runs natively on Termux. Remove it:
+
+```bash
+bash tools/unhook-ubuntu.sh --dry-run   # show what would change
+bash tools/unhook-ubuntu.sh             # remove it, backing up .bashrc first
+exec bash -l
+```
+
 **Termux needs `openssl-tool`, not `openssl`:**
 
 ```bash
