@@ -44,13 +44,54 @@ Ada **3 kunci OpenAI** berbeda di env lamamu: `OPENAI_API_KEY`, `OPENAI_KEY`,
    nano ~/.config/rocagent/app.env
    # isi: OPENAI_API_KEY=sk-proj-...
    ```
-6. Uji kunci baru bekerja:
+6. Uji kunci baru bekerja. **Ganti `<KUNCI_BARU>` dengan nilai aslinya**,
+   termasuk menghapus tanda `< >`:
    ```bash
-   curl -s -o /dev/null -w '%{http_code}\n' \
-     -H "Authorization: Bearer <KUNCI_BARU>" https://api.openai.com/v1/models
-   # 200 = baik
+   KEY='sk-proj-nilai-asli-kamu'
+   curl -s -w '\n%{http_code}\n' -H "Authorization: Bearer $KEY" \
+        https://api.openai.com/v1/models | tail -5
    ```
+
+   **Cara membaca hasilnya:**
+
+   | Keluaran | Arti |
+   |---|---|
+   | `200` + daftar model | Kunci baik dan berizin `model.read` |
+   | `401` + `invalid_api_key` | Kunci salah ketik atau sudah dicabut |
+   | `401` + `insufficient_permissions` | **Kunci VALID**, hanya tidak berizin untuk endpoint ini |
+
+   Yang ketiga bukan kegagalan. Kalau kamu membuat kunci **Restricted** dan
+   tidak memberi `Models: Read`, endpoint `/v1/models` memang ditolak walau
+   kuncinya sehat. Uji dengan endpoint yang memang kamu izinkan:
+
+   ```bash
+   # Kalau kunci hanya berizin chat completions:
+   curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $KEY" \
+     -H 'Content-Type: application/json' \
+     -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}],"max_tokens":1}' \
+     https://api.openai.com/v1/chat/completions
+   # 200 = kunci bekerja untuk keperluan RocAgent
+   ```
+
+   Bersihkan variabelnya setelah selesai supaya tidak tertinggal di sesi shell:
+   ```bash
+   unset KEY
+   ```
+
 7. **Baru sekarang** kembali ke halaman API keys → **Revoke** ketiga kunci lama.
+
+### Catatan izin untuk RocAgent
+
+Kunci **Restricted** memang pilihan yang benar. Yang dibutuhkan RocAgent:
+
+| Permission | Nilai | Alasan |
+|---|---|---|
+| **Model capabilities** | **Write** | Wajib. Inilah yang mengizinkan `/v1/chat/completions` |
+| List models | Read | Opsional — hanya agar daftar model muncul di UI |
+| Semua sisanya | None | Assistants, Threads, Files, Videos, Batch, Tunnels tidak dipakai |
+
+Kalau di layar izin kamu `Model capabilities` masih **Request**, ubah ke
+**Write** — tanpa itu RocAgent tidak bisa memanggil model sama sekali.
 
 ### Verifikasi
 
