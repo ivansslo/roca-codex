@@ -197,8 +197,19 @@ CF_R2_REGION=auto
 Uji kunci barunya benar-benar bekerja:
 
 ```bash
+pip install awscli          # sekali saja
 bash tools/verify-rotation.sh r2
 ```
+
+Skrip memvalidasi panjang kunci sebelum memanggil API — Access Key ID 32
+karakter, Secret 64, Account ID 32.
+
+**Belum punya bucket?** `CF_R2_BUCKET` boleh dikosongkan. Kunci R2 berlaku
+untuk seluruh akun, bukan per-bucket, jadi kredensialnya tetap sah. `aws s3 ls`
+akan mengembalikan daftar kosong — itu **sukses**, bukan kegagalan: artinya
+kunci diterima dan akunmu memang belum punya bucket.
+
+Kalau nanti perlu: dash.cloudflare.com → R2 → **Create bucket**.
 
 ### Punya lebih dari satu token?
 

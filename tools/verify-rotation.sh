@@ -138,13 +138,30 @@ uji_r2() {
   acct=$(baca 'Account ID: ')
   [ -n "$sak" ] && [ -n "$acct" ] || { info 'dilewati (perlu ketiganya)'; return; }
 
-  command -v aws >/dev/null || {
-    info 'aws-cli tidak terpasang. Uji manual:'
-    printf '    pip install awscli\n'
-    printf '    AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \\\n'
-    printf '      aws s3 ls --endpoint-url https://%s.r2.cloudflarestorage.com\n' "$acct"
+  # R2: Access Key ID selalu 32 heksadesimal, Secret 64, Account ID 32.
+  # Cek ini menangkap placeholder dan salah tempel sebelum memanggil API.
+  local salah=0
+  [ "${#akid}" -ne 32 ] && { printf '  %s✗ Access Key ID %s karakter, seharusnya 32%s\n' "$c_yel" "${#akid}" "$c_rst"; salah=1; }
+  [ "${#sak}"  -ne 64 ] && { printf '  %s✗ Secret Access Key %s karakter, seharusnya 64%s\n' "$c_yel" "${#sak}" "$c_rst"; salah=1; }
+  [ "${#acct}" -ne 32 ] && { printf '  %s✗ Account ID %s karakter, seharusnya 32%s\n' "$c_yel" "${#acct}" "$c_rst"; salah=1; }
+  if [ "$salah" -eq 1 ]; then
+    printf '    Kalau kamu menempel "..." atau "<...>", itu teks contoh — bukan nilai.\n'
+    return 1
+  fi
+
+  # Jangan pernah mencetak perintah berisi '...' sebagai placeholder. Perintah
+  # itu akan disalin apa adanya dan '...' jadi nilai harfiah — persis yang
+  # menghasilkan "access key has length 3". Karena kunci sudah ada di variabel,
+  # skrip ini menawarkan memasang aws-cli lalu menguji sendiri.
+  if ! command -v aws >/dev/null; then
+    warn "aws-cli belum terpasang, jadi kunci tidak bisa diuji dari sini."
+    printf '    Pasang dulu:  pip install awscli\n'
+    printf '    lalu jalankan lagi:  bash tools/verify-rotation.sh r2\n'
+    printf '\n    (Skrip akan memakai kunci yang kamu ketik tadi. Jangan menyalin\n'
+    printf '     contoh perintah apa pun yang memuat "..." — itu placeholder,\n'
+    printf '     bukan nilai.)\n'
     return
-  }
+  fi
   local out
   out=$(AWS_ACCESS_KEY_ID="$akid" AWS_SECRET_ACCESS_KEY="$sak" AWS_DEFAULT_REGION=auto \
         aws s3 ls --endpoint-url "https://$acct.r2.cloudflarestorage.com" 2>&1)
