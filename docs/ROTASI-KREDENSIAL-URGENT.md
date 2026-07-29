@@ -152,8 +152,10 @@ chmod 600 ~/.config/rocagent/*.env
 Pakai `rocvault` (lihat `PANDUAN-rocvault.md`):
 
 ```bash
+# lock memverifikasi vault bisa dibuka, lalu MENANYAKAN apakah
+# plaintext dihapus. Jangan jalankan shred sebagai perintah terpisah.
 rocvault lock ~/.config/rocagent/cloud.env
-shred -u ~/.config/rocagent/cloud.env
+
 rocvault run ~/.config/rocagent/cloud.env.vault -- npm start
 ```
 

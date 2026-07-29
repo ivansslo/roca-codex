@@ -300,11 +300,21 @@ chmod 600 ~/.config/rocagent/*.env
 rocvault lock ~/.config/rocagent/app.env
 rocvault lock ~/.config/rocagent/cloud.env
 rocvault lock ~/.config/rocagent/personal.env
-
-shred -u ~/.config/rocagent/app.env
-shred -u ~/.config/rocagent/cloud.env
-shred -u ~/.config/rocagent/personal.env
 ```
+
+`rocvault lock` memverifikasi vault bisa dibuka kembali dan isinya identik,
+**baru** menawarkan menghapus berkas asli. Jawab `y` kalau mau dihapus.
+
+> ⚠️ **Jangan jalankan `shred` sebagai perintah terpisah.** Versi lama panduan
+> ini menyuruh `rocvault lock` lalu `shred -u` di baris berbeda. Kalau `lock`
+> gagal — salah passphrase, vault sudah ada, disk penuh — `shred` tetap
+> berjalan dan menghancurkan satu-satunya salinan. `shred` tidak bisa
+> dibatalkan.
+>
+> Kalau itu sudah terjadi:
+> ```bash
+> bash tools/recover-env.sh
+> ```
 
 Menjalankan:
 ```bash

@@ -109,8 +109,47 @@ cmd_lock() {
   chmod 600 "$enc"
 
   ok "Terenkripsi -> $enc ($(wc -c < "$enc") byte, mode 600)"
-  warn "Berkas asli '$plain' MASIH ADA dan belum terenkripsi."
-  printf '  Hapus dengan aman:  shred -u %s   (atau: rm -P %s di Termux)\n' "$plain" "$plain"
+
+  # Verifikasi round-trip SEBELUM menawarkan penghapusan. Tanpa ini, vault yang
+  # rusak diam-diam ditambah plaintext yang dihapus = data hilang permanen.
+  local verif
+  verif=$(vault_open "$enc" "$pass" 2>/dev/null) || {
+    warn "Vault dibuat TAPI gagal dibuka kembali. Berkas asli TIDAK dihapus."
+    return 1
+  }
+  if [ "$verif" != "$(cat "$plain")" ]; then
+    warn "Isi vault tidak sama dengan aslinya. Berkas asli TIDAK dihapus."
+    return 1
+  fi
+  ok "Verifikasi round-trip lulus — isi vault identik dengan aslinya"
+
+  # Penghapusan plaintext dilakukan DI SINI, bukan sebagai perintah shred
+  # terpisah. Panduan versi lama menyuruh menjalankan lock dan shred sebagai
+  # dua baris berbeda; ketika lock gagal, shred tetap berjalan dan menghancurkan
+  # satu-satunya salinan. Sekarang penghapusan hanya mungkin setelah verifikasi
+  # di atas lulus.
+  if [ "${ROCVAULT_KEEP_PLAIN:-}" = "1" ]; then
+    warn "ROCVAULT_KEEP_PLAIN=1 — berkas asli '$plain' dibiarkan."
+    return 0
+  fi
+
+  local jawab=""
+  if [ -t 0 ] && [ -r /dev/tty ]; then
+    printf '\n  Hapus berkas asli %s sekarang? [y/N] ' "$plain"
+    read -r jawab </dev/tty
+  fi
+  case "$jawab" in
+    y|Y|ya|yes)
+      shred -u "$plain" 2>/dev/null || rm -P "$plain" 2>/dev/null || rm -f "$plain"
+      ok "Berkas asli dihapus. Buka lagi dengan: rocvault unlock $enc"
+      ;;
+    *)
+      warn "Berkas asli '$plain' MASIH ADA dan belum terenkripsi."
+      printf '  Setelah yakin vault bisa dibuka, hapus dengan:\n'
+      printf '    rocvault unlock %s | head -3    # pastikan isinya benar\n' "$enc"
+      printf '    shred -u %s\n' "$plain"
+      ;;
+  esac
 }
 
 # Baca vault, verifikasi MAC, keluarkan plaintext ke stdout.

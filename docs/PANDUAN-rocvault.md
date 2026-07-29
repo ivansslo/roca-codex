@@ -80,7 +80,7 @@ mkdir -p ~/.config/rocagent && chmod 700 ~/.config/rocagent
 cp app.env.template ~/.config/rocagent/app.env
 nano ~/.config/rocagent/app.env          # isi nilai hasil rotasi
 rocvault lock ~/.config/rocagent/app.env
-shred -u ~/.config/rocagent/app.env      # hapus plaintext
+# lock memverifikasi vault dulu, lalu menanyakan apakah plaintext dihapus
 
 # Setiap kali menjalankan
 cd ~/RocAgent
