@@ -27,6 +27,10 @@ step() { printf '\n%s── %s ──%s\n' "$c_dim" "$*" "$c_rst"; }
 hint() { printf '    %s\n' "$*"; }
 
 PORT="${PORT:-3000}"
+# Termux tidak menyediakan /tmp; TMPDIR menunjuk $PREFIX/tmp di sana.
+TMP="${TMPDIR:-/tmp}"
+[ -d "$TMP" ] || TMP="$HOME"
+
 BASE="http://127.0.0.1:$PORT"
 
 # ── 1. Environment ───────────────────────────────────────────────
@@ -104,9 +108,45 @@ if [ -n "${OPENAI_API_KEY:-${OPENAI_KEY:-}}" ]; then
     printf '%s' "$chat" | head -5 | sed 's/^/      /'
     exit 1
   fi
+elif [ -n "${GROQ_KEY:-}" ]; then
+  step "3. Groq: endpoint chat"
+  chat=$(curl -s --max-time 30 -H "Authorization: Bearer $GROQ_KEY" \
+         -H 'Content-Type: application/json' \
+         -d '{"model":"llama-3.3-70b-versatile","messages":[{"role":"user","content":"ping"}],"max_tokens":5}' \
+         https://api.groq.com/openai/v1/chat/completions)
+  if printf '%s' "$chat" | grep -q '"choices"'; then
+    ok "Groq BEKERJA"
+  elif printf '%s' "$chat" | grep -qi 'invalid_api_key\|Invalid API Key'; then
+    bad "GROQ_KEY ditolak — salah atau dicabut"
+    hint "console.groq.com/keys"
+    exit 1
+  elif printf '%s' "$chat" | grep -qi 'model_not_found\|does not exist\|decommissioned'; then
+    bad "Model llama-3.3-70b-versatile tidak tersedia lagi di Groq"
+    hint "Groq rutin menonaktifkan model lama. Cek console.groq.com/docs/models"
+    printf '%s' "$chat" | head -3 | sed 's/^/      /'
+    exit 1
+  else
+    bad "Groq gagal:"
+    printf '%s' "$chat" | head -4 | sed 's/^/      /'
+    exit 1
+  fi
+
+elif [ -n "${GEMINI_API_KEY:-${GEMINI_KEY:-}}" ]; then
+  step "3. Gemini: endpoint chat"
+  GK="${GEMINI_API_KEY:-$GEMINI_KEY}"
+  chat=$(curl -s --max-time 30 -H 'Content-Type: application/json' \
+         -d '{"contents":[{"parts":[{"text":"ping"}]}]}' \
+         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$GK")
+  if printf '%s' "$chat" | grep -q '"candidates"'; then
+    ok "Gemini BEKERJA"
+  else
+    bad "Gemini gagal:"
+    printf '%s' "$chat" | head -4 | sed 's/^/      /'
+    exit 1
+  fi
+
 else
-  warn "Bukan OpenAI — lewati uji langsung ke penyedia"
-  hint "Uji lewat server saja (langkah berikutnya)"
+  warn "Tidak ada kunci yang bisa diuji langsung — lanjut ke uji server"
 fi
 
 # ── 4. Server ────────────────────────────────────────────────────
@@ -121,7 +161,7 @@ if curl -s --max-time 5 -o /dev/null "$BASE/api/health" 2>/dev/null; then
   ok "Server sudah berjalan di $BASE"
 else
   printf '  Menjalankan server sementara di port %s...\n' "$PORT"
-  node dist/server.cjs >/tmp/test-agent-server.log 2>&1 &
+  node dist/server.cjs >"$TMP/test-agent-server.log" 2>&1 &
   SRV=$!
   STARTED=yes
   for _ in $(seq 1 20); do
@@ -130,14 +170,14 @@ else
   done
   if ! curl -s --max-time 3 -o /dev/null "$BASE/api/health" 2>/dev/null; then
     bad "Server gagal start. Log:"
-    tail -15 /tmp/test-agent-server.log | sed 's/^/      /'
+    tail -15 "$TMP/test-agent-server.log" | sed 's/^/      /'
     [ -n "${SRV:-}" ] && kill "$SRV" 2>/dev/null
     exit 1
   fi
   ok "Server hidup"
 fi
 
-cleanup() { [ "$STARTED" = yes ] && [ -n "${SRV:-}" ] && kill "$SRV" 2>/dev/null; rm -f /tmp/ta-cookie; }
+cleanup() { [ "$STARTED" = yes ] && [ -n "${SRV:-}" ] && kill "$SRV" 2>/dev/null; rm -f "$TMP/ta-cookie"; }
 trap cleanup EXIT
 
 # Model apa yang dianggap tersedia oleh server
@@ -154,29 +194,29 @@ fi
 # ── 5. Chat sungguhan ────────────────────────────────────────────
 step "5. Kirim pesan ke agent"
 
-curl -s -c /tmp/ta-cookie -X POST -H 'Content-Type: application/json' \
+curl -s -c "$TMP/ta-cookie" -X POST -H 'Content-Type: application/json' \
      -d "{\"password\":$(printf '%s' "$WEB_PASSWORD" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/')}" \
      -o /dev/null "$BASE/api/auth/login"
 
-code=$(curl -s -b /tmp/ta-cookie -o /tmp/ta-chat.json -w '%{http_code}' \
+code=$(curl -s -b "$TMP/ta-cookie" -o "$TMP/ta-chat.json" -w '%{http_code}' \
        --max-time 90 -X POST -H 'Content-Type: application/json' \
        -d '{"messages":[{"role":"user","text":"Balas satu kata saja: OK"}]}' \
        "$BASE/api/chat")
 
 if [ "$code" != "200" ]; then
   bad "HTTP $code dari /api/chat"
-  head -c 400 /tmp/ta-chat.json | sed 's/^/      /'
+  head -c 400 "$TMP/ta-chat.json" | sed 's/^/      /'
   exit 1
 fi
 
 reply=$(python3 -c "
 import json,sys
 try:
-    d=json.load(open('/tmp/ta-chat.json'))
+    d=json.load(open(sys.argv[1]))
     print((d.get('text') or d.get('error') or json.dumps(d))[:400])
 except Exception as e:
     print('gagal membaca respons:', e)
-" 2>/dev/null || head -c 300 /tmp/ta-chat.json)
+" "$TMP/ta-chat.json" 2>/dev/null || head -c 300 "$TMP/ta-chat.json")
 
 if printf '%s' "$reply" | grep -q "Tidak ada provider AI"; then
   bad "Semua penyedia gagal. Pesan dari server:"

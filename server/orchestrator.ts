@@ -958,7 +958,6 @@ async function callTurboFallback(_messages: any[], executionLogs: any[], onProgr
   if (process.env.GROQ_KEY || process.env.GROQ_API_KEY) configured.push("Groq");
   if (process.env.OPENROUTER_API_KEY || process.env.OR_KEY) configured.push("OpenRouter");
   if (process.env.OPENAI_API_KEY || process.env.OPENAI_KEY) configured.push("OpenAI");
-  const ociEndpoint = process.env.OCI_MODEL_ENDPOINT || process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
 
   // Laporkan penyebab yang SEBENARNYA. Versi lama selalu menyatakan
   // "semua mengalami 429 Rate Limit", padahal kegagalan paling umum adalah
@@ -970,14 +969,15 @@ async function callTurboFallback(_messages: any[], executionLogs: any[], onProgr
 
   const hint = configured.length
     ? detail +
-      `Provider terkonfigurasi: **${configured.join(", ")}**. OCI/Ollama lokal (${ociEndpoint}) juga tidak merespons.\n\n` +
+      `Provider terkonfigurasi: **${configured.join(", ")}**.\n\n` +
       `💡 **Periksa berurutan**:\n` +
       `1. Kunci API benar dan belum dicabut\n` +
       `2. Kunci punya izin untuk endpoint chat (OpenAI: scope *Model capabilities: Write*)\n` +
       `3. Model yang dipilih memang ada pada provider itu\n` +
       `4. Saldo/kuota akun masih tersedia`
-    : `Belum ada API key provider AI terkonfigurasi dan OCI/Ollama lokal (${ociEndpoint}) offline.\n\n` +
-      `💡 **Solusi**: Isi salah satu API Key (\`OPENAI_API_KEY\`, \`GEMINI_API_KEY\`, \`GROQ_KEY\`, \`OPENROUTER_API_KEY\`) atau aktifkan Ollama lokal (\`ollama run qwen2.5:7b\`).`;
+    : `Belum ada API key provider AI terkonfigurasi.\n\n` +
+      `💡 **Solusi**: Isi salah satu API Key di vault (\`GROQ_KEY\`, \`GEMINI_API_KEY\`, \`OPENAI_API_KEY\`, \`OR_KEY\`) lalu jalankan ulang:\n` +
+      `\`rocvault edit ~/.config/rocagent/app.env.vault\``;
 
   const text = `⚠️ **Tidak ada provider AI yang dapat merespons.**\n\n${hint}`;
   onProgress?.({ type: 'chunk', data: { text } });
@@ -1005,7 +1005,13 @@ export async function runOrchestrator
   const hasOpenAI = !!(process.env.OPENAI_API_KEY || process.env.OPENAI_KEY);
 
   const defaultProvider = process.env.PROVIDER || (hasGemini ? "gemini" : hasGroq ? "groq" : hasOpenRouter ? "openrouter" : hasOpenAI ? "openai" : "gemini");
-  const provider = (options.provider || defaultProvider).toLowerCase();
+  // PROVIDER boleh berisi daftar dipisah koma, mis. "groq,gemini,openai".
+  // Nilai pertama menjadi provider utama, sisanya menentukan URUTAN failover.
+  // Sebelumnya seluruh string dipakai sebagai satu nama provider, sehingga
+  // tidak cocok dengan apa pun dan permintaan langsung jatuh ke fallback.
+  const providerList = (options.provider || defaultProvider)
+    .toLowerCase().split(",").map(x => x.trim()).filter(Boolean);
+  const provider = providerList[0] || "gemini";
   const rawModel = options.model || "";
   // Model default HARUS cocok dengan providernya. Sebelumnya setiap provider
   // non-Gemini jatuh ke "openai/gpt-oss-120b" — itu identifier Groq, dan API
@@ -1022,7 +1028,7 @@ export async function runOrchestrator
   };
   const model = rawModel && rawModel !== "gemini-3.6-flash"
     ? rawModel
-    : (DEFAULT_MODEL[provider] || "gemini-2.5-flash");
+    : (DEFAULT_MODEL[provider] || DEFAULT_MODEL[({xgoog:"gemini",google:"gemini",deepseek:"openrouter",cf:"cfai",cloudflare:"cfai",ollama:"oci"} as Record<string,string>)[provider] || ""] || "gemini-2.5-flash");
   const executionLogs: any[] = [];
   const onProgress = options.onProgress;
 
@@ -1038,16 +1044,26 @@ export async function runOrchestrator
   // Lean failover chain — only genuinely distinct providers. Removed the 5 "aurora-*" aliases
   // (all identical Gemini wrappers) and jules (creates a GitHub PR, not a chat reply) which only
   // added latency without adding real fallback options.
+  // Alias supaya nama yang wajar di .env tetap dikenali.
+  const PROVIDER_ALIAS: Record<string, string> = {
+    xgoog: "gemini", google: "gemini", googleai: "gemini",
+    deepseek: "openrouter", deepsek: "openrouter",
+    cf: "cfai", cloudflare: "cfai",
+    ollama: "oci",
+  };
+  const norm = (n: string) => PROVIDER_ALIAS[n] || n;
+
+  // Urutan dari PROVIDER dulu, baru sisanya sebagai jaring pengaman.
   const providersToTry = [
-    { name: provider, model: model },
+    { name: norm(provider), model: model },
+    ...providerList.slice(1).map(n => ({ name: norm(n), model: DEFAULT_MODEL[norm(n)] || "" }))
+      .filter(p => p.model),
     { name: "gemini", model: "gemini-2.5-flash" },
     { name: "gemini", model: "gemini-2.0-flash" },
-    { name: "groq", model: "llama-3.3-70b-versatile" },
+    { name: "groq", model: "openai/gpt-oss-120b" },
     { name: "openrouter", model: "google/gemini-2.0-flash-001" },
     { name: "openai", model: "gpt-4o-mini" },
-    { name: "roadqwen", model: "qwen3.6-plus" },
-    { name: "cfai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
-    { name: "oci", model: "qwen2.5:7b" }
+    { name: "cfai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" }
   ];
 
   const tried = new Set<string>();

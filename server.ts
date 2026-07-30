@@ -91,15 +91,13 @@ async function startServer() {
       openai: !!(process.env.OPENAI_API_KEY || process.env.OPENAI_KEY),
       openrouter: !!(process.env.OPENROUTER_API_KEY || process.env.OR_KEY || process.env.OPENROUTER_KEY || process.env.DEEPSEK_API_KEY),
       cfai: !!(process.env.CF_AI_TOKEN || process.env.CF_TOKEN),
-      oci: !!(process.env.OCI_OLLAMA_URL || process.env.OLLAMA_URL),
     } as Record<string, boolean>;
 
     const catalog = [
       { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Fast)", provider: "gemini", icon: "⚡" },
       { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Reasoning)", provider: "gemini", icon: "🧠" },
       { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "gemini", icon: "⚡" },
-      { id: "qwen2.5:7b", name: "Qwen 2.5 7B (Local OCI/Ollama)", provider: "oci", icon: "🦙" },
-      { id: "llama-3.3-70b-versatile", name: "Groq Llama 3.3 70B", provider: "groq", icon: "⚡" },
+      { id: "openai/gpt-oss-120b", name: "Groq GPT-OSS 120B", provider: "groq", icon: "⚡" },
       { id: "gpt-4o", name: "OpenAI GPT-4o", provider: "openai", icon: "🟢" },
       { id: "gpt-4o-mini", name: "OpenAI GPT-4o mini", provider: "openai", icon: "🟢" },
       { id: "deepseek/deepseek-r1", name: "OpenRouter DeepSeek R1", provider: "openrouter", icon: "🌐" },
@@ -112,13 +110,27 @@ async function startServer() {
       reason: have[m.provider] ? undefined : `Tidak ada kunci API untuk ${m.provider}`,
     }));
 
-    const activeProvider = process.env.PROVIDER ||
+    // PROVIDER boleh berupa daftar ("groq,gemini,openai"). Yang aktif adalah
+    // entri PERTAMA yang benar-benar punya kunci — mengembalikan daftar mentah
+    // membuat UI mencari provider bernama "groq,gemini,openai" dan gagal.
+    const ALIAS: Record<string, string> = {
+      xgoog: "gemini", google: "gemini", googleai: "gemini",
+      deepseek: "openrouter", deepsek: "openrouter",
+      cf: "cfai", cloudflare: "cfai",
+    };
+    const wanted = (process.env.PROVIDER || "")
+      .toLowerCase().split(",").map(x => ALIAS[x.trim()] || x.trim()).filter(Boolean);
+
+    const activeProvider =
+      wanted.find(p => have[p]) ||
       (have.gemini ? "gemini" : have.openai ? "openai" : have.groq ? "groq" :
-       have.openrouter ? "openrouter" : "gemini");
+       have.openrouter ? "openrouter" : have.cfai ? "cfai" : "gemini");
 
     res.json({
       active_provider: activeProvider,
       configured_providers: Object.keys(have).filter(k => have[k]),
+      // Urutan failover yang diminta lewat PROVIDER, setelah alias & penyaringan.
+      failover_chain: wanted.filter(p => have[p]),
       models,
     });
   });

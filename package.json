@@ -21,7 +21,8 @@
     "codex": "tsx codex-cli.ts",
     "test": "tsx server/__tests__/commandGuard.test.ts && tsx server/__tests__/shellGuard.integration.test.ts && bash tools/__tests__/rocvault.test.sh",
     "test:guard": "tsx server/__tests__/commandGuard.test.ts",
-    "test:vault": "bash tools/__tests__/rocvault.test.sh"
+    "test:vault": "bash tools/__tests__/rocvault.test.sh",
+    "cli": "tsx rocagent-cli.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

@@ -75,7 +75,23 @@ awsx()      { aws_shell "$@"; }
 
 # Status tailnet ringkas
 ts() {
-  command -v tailscale >/dev/null || { echo "tailscale tidak terpasang"; return 1; }
+  # Di Android, Tailscale berjalan sebagai APLIKASI — binernya tidak ada di
+  # PATH Termux. Ketiadaan perintah `tailscale` BUKAN berarti tailnet mati;
+  # versi sebelumnya menyimpulkan begitu dan menyesatkan.
+  if ! command -v tailscale >/dev/null 2>&1; then
+    echo "  CLI tailscale tidak ada di Termux (wajar bila memakai aplikasi Android)"
+    echo "  Menguji konektivitas langsung ke port 22:"
+    local h
+    for h in "OCI:$OCI_TS_IP" "AWS:$AWS_TS_IP"; do
+      if _roc_port_open "${h#*:}" 22 4; then
+        printf '  \033[32m✓\033[0m %-4s %-16s ssh terbuka\n' "${h%%:*}" "${h#*:}"
+      else
+        printf '  \033[31m✗\033[0m %-4s %-16s tidak terjangkau\n' "${h%%:*}" "${h#*:}"
+      fi
+    done
+    echo "  Status lengkap: buka aplikasi Tailscale di Android."
+    return 0
+  fi
   case "${1:-status}" in
     status|"")
       tailscale status 2>/dev/null | head -20

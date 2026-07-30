@@ -106,6 +106,29 @@ supports `kdf` and HMAC.
 | `test-agent.sh` | Layered check of why the agent is not replying |
 | `install-bashrc-helpers.sh` | Shell helpers: `oci`, `awsx`, `ts`, `dock`, `roc` |
 
+### Terminal client
+
+```bash
+rocvault run ~/.config/rocagent/app.env.vault -- npm run cli
+rocvault run ~/.config/rocagent/app.env.vault -- npm run cli -- "one-shot prompt"
+```
+
+`rocagent-cli` talks to the local server over HTTP, so it shares sessions,
+memory and tools with the web UI. In-session: `/model`, `/persona`, `/new`,
+`/stat`, `/help`, `/exit`.
+
+### Multiple providers
+
+`PROVIDER` accepts a comma-separated list. The first entry that has a key
+becomes active; the rest form the failover order. Entries without a key are
+skipped, so listing more than you have configured is safe.
+
+```
+PROVIDER=groq,gemini,openai,openrouter,cfai
+```
+
+Aliases: `xgoog`/`google` → gemini, `deepseek` → openrouter, `cf` → cfai.
+
 On the VM: `rocagent-vm pull && rocagent-vm setup-tools`
 
 ### Termux drops you into an Ubuntu container on startup?
