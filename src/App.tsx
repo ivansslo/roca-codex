@@ -106,10 +106,20 @@ export default function App() {
     fetch('/api/models').then(r => r.ok ? r.json() : null).then(data => {
       if (data?.models?.length) {
         setAvailableModels(data.models);
+
+        // Hanya model yang penyedianya punya kunci API yang bisa dipilih.
+        // Sebelumnya default selalu models[0] — Gemini — sehingga dengan hanya
+        // kunci OpenAI terpasang, setiap pesan dikirim ke penyedia tanpa
+        // kredensial dan gagal tanpa penjelasan di UI.
+        const usable = data.models.filter((m: any) => m.active !== false);
+        const pool = usable.length ? usable : data.models;
+
         const saved = localStorage.getItem('ROC_MODEL');
-        const found = saved && data.models.find((m: any) => m.id === saved);
-        if (found) { setSelectedModel(found.id); setSelectedProvider(found.provider); }
-        else { setSelectedModel(data.models[0].id); setSelectedProvider(data.models[0].provider); }
+        const found = saved && pool.find((m: any) => m.id === saved);
+        // Dahulukan model milik provider aktif, baru model apa pun yang usable.
+        const preferred = pool.find((m: any) => m.provider === data.active_provider) || pool[0];
+        const pick = found || preferred;
+        if (pick) { setSelectedModel(pick.id); setSelectedProvider(pick.provider); }
       }
     }).catch(() => {});
   }, []);

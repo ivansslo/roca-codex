@@ -58,10 +58,26 @@ export function Sidebar({
         <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
           {availableModels.map((m) => {
             const sel = selectedModel === m.id;
+            // Model tanpa kunci API tetap ditampilkan supaya terlihat apa saja
+            // yang tersedia bila dikonfigurasi, tetapi tidak bisa dipilih —
+            // memilihnya hanya menghasilkan kegagalan tanpa penjelasan.
+            const usable = m.active !== false;
             return (
-              <button key={m.id} onClick={() => onSelectModel(m)} className={`w-full flex items-center justify-between p-2 px-2.5 rounded-lg text-xs transition-all cursor-pointer font-mono ${sel ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/40 font-bold' : 'text-theme-text-secondary hover:bg-theme-btn-hover hover:text-theme-text-primary'}`}>
+              <button
+                key={m.id}
+                onClick={() => usable && onSelectModel(m)}
+                disabled={!usable}
+                title={usable ? m.name : (m.reason || `Tidak ada kunci API untuk ${m.provider}`)}
+                className={`w-full flex items-center justify-between p-2 px-2.5 rounded-lg text-xs transition-all font-mono ${
+                  !usable
+                    ? 'text-theme-text-secondary/40 cursor-not-allowed'
+                    : sel
+                      ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/40 font-bold cursor-pointer'
+                      : 'text-theme-text-secondary hover:bg-theme-btn-hover hover:text-theme-text-primary cursor-pointer'
+                }`}>
                 <span className="flex items-center gap-2 truncate"><span className="text-sm">{m.icon || '🤖'}</span><span className="truncate">{m.name}</span></span>
-                {sel && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+                {sel && usable && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+                {!usable && <span className="text-[9px] uppercase tracking-wide opacity-70">no key</span>}
               </button>
             );
           })}

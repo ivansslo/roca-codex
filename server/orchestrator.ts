@@ -952,21 +952,34 @@ async function callRoadQwen(messages: any[], modelName: string, executionLogs: a
 
 // Honest last-resort fallback — by the time we get here, every provider in the failover chain
 // already failed, so there is nothing real to retry. Tell the user the truth instead of faking success.
-async function callTurboFallback(_messages: any[], executionLogs: any[], onProgress?: Function) {
+async function callTurboFallback(_messages: any[], executionLogs: any[], onProgress?: Function, failureReasons: string[] = []) {
   const configured: string[] = [];
   if (process.env.GEMINI_API_KEY || process.env.GEMINI_KEY || process.env.GOOGLE_API_KEY) configured.push("Gemini");
   if (process.env.GROQ_KEY || process.env.GROQ_API_KEY) configured.push("Groq");
   if (process.env.OPENROUTER_API_KEY || process.env.OR_KEY) configured.push("OpenRouter");
-  if (process.env.OPENAI_API_KEY) configured.push("OpenAI");
+  if (process.env.OPENAI_API_KEY || process.env.OPENAI_KEY) configured.push("OpenAI");
   const ociEndpoint = process.env.OCI_MODEL_ENDPOINT || process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
 
-  const hint = configured.length
-    ? `Provider Cloud terkonfigurasi: **${configured.join(", ")}** (semua mengalami 429 Rate Limit / Quota Exceeded) dan OCI/Ollama Local Model (${ociEndpoint}) offline.\n\n` +
-      `💡 **Solusi**: Periksa file \`.env\` atau jalankan Ollama/OCI lokal (\`ollama run qwen2.5:7b\`).`
-    : `Belum ada API key provider AI terkonfigurasi di \`.env\` dan OCI/Ollama lokal (${ociEndpoint}) offline.\n\n` +
-      `💡 **Solusi**: Isi salah satu API Key di \`.env\` (\`GEMINI_API_KEY\`, \`GROQ_KEY\`, \`OPENROUTER_API_KEY\`, \`OPENAI_API_KEY\`) atau aktifkan Ollama lokal (\`ollama run qwen2.5:7b\`).`;
+  // Laporkan penyebab yang SEBENARNYA. Versi lama selalu menyatakan
+  // "semua mengalami 429 Rate Limit", padahal kegagalan paling umum adalah
+  // kunci tidak valid atau nama model salah — menuduh rate limit membuat
+  // pengguna menunggu kuota pulih untuk masalah yang tidak akan hilang sendiri.
+  const detail = failureReasons.length
+    ? `**Yang terjadi pada tiap provider:**\n` + failureReasons.map(r => `- ${r}`).join("\n") + `\n\n`
+    : "";
 
-  const text = `⚠️ **Tidak ada provider AI (Cloud/OCI) yang dapat merespons saat ini.**\n\n${hint}`;
+  const hint = configured.length
+    ? detail +
+      `Provider terkonfigurasi: **${configured.join(", ")}**. OCI/Ollama lokal (${ociEndpoint}) juga tidak merespons.\n\n` +
+      `💡 **Periksa berurutan**:\n` +
+      `1. Kunci API benar dan belum dicabut\n` +
+      `2. Kunci punya izin untuk endpoint chat (OpenAI: scope *Model capabilities: Write*)\n` +
+      `3. Model yang dipilih memang ada pada provider itu\n` +
+      `4. Saldo/kuota akun masih tersedia`
+    : `Belum ada API key provider AI terkonfigurasi dan OCI/Ollama lokal (${ociEndpoint}) offline.\n\n` +
+      `💡 **Solusi**: Isi salah satu API Key (\`OPENAI_API_KEY\`, \`GEMINI_API_KEY\`, \`GROQ_KEY\`, \`OPENROUTER_API_KEY\`) atau aktifkan Ollama lokal (\`ollama run qwen2.5:7b\`).`;
+
+  const text = `⚠️ **Tidak ada provider AI yang dapat merespons.**\n\n${hint}`;
   onProgress?.({ type: 'chunk', data: { text } });
   return { text, logs: executionLogs };
 }
@@ -994,7 +1007,22 @@ export async function runOrchestrator
   const defaultProvider = process.env.PROVIDER || (hasGemini ? "gemini" : hasGroq ? "groq" : hasOpenRouter ? "openrouter" : hasOpenAI ? "openai" : "gemini");
   const provider = (options.provider || defaultProvider).toLowerCase();
   const rawModel = options.model || "";
-  const model = rawModel && rawModel !== "gemini-3.6-flash" ? rawModel : (provider === "gemini" ? "gemini-2.5-flash" : "openai/gpt-oss-120b");
+  // Model default HARUS cocok dengan providernya. Sebelumnya setiap provider
+  // non-Gemini jatuh ke "openai/gpt-oss-120b" — itu identifier Groq, dan API
+  // OpenAI menolaknya. Akibatnya PROVIDER=openai tanpa memilih model di UI
+  // selalu gagal pada percobaan pertama.
+  const DEFAULT_MODEL: Record<string, string> = {
+    gemini: "gemini-2.5-flash",
+    openai: "gpt-4o-mini",
+    groq: "openai/gpt-oss-120b",
+    openrouter: "google/gemini-2.0-flash-001",
+    cfai: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    oci: "qwen2.5:7b",
+    roadqwen: "qwen3.6-plus",
+  };
+  const model = rawModel && rawModel !== "gemini-3.6-flash"
+    ? rawModel
+    : (DEFAULT_MODEL[provider] || "gemini-2.5-flash");
   const executionLogs: any[] = [];
   const onProgress = options.onProgress;
 
@@ -1024,6 +1052,9 @@ export async function runOrchestrator
 
   const tried = new Set<string>();
   let geminiQuotaExhausted = false;
+  // Alasan kegagalan sebenarnya per provider, supaya pesan akhir melaporkan
+  // apa yang terjadi alih-alih menebak "429".
+  const failureReasons: string[] = [];
 
   for (const p of providersToTry) {
     const key = `${p.name}:${p.model}`;
@@ -1037,6 +1068,10 @@ export async function runOrchestrator
     }
 
     // Skip providers if required environment credentials are missing
+    // Gemini sebelumnya tidak punya guard, padahal ia menempati dua slot
+    // teratas rantai failover. Tanpa kunci Gemini, setiap permintaan membuang
+    // dua percobaan gagal sebelum sampai ke provider yang benar-benar ada.
+    if (isGeminiBased && !hasGemini) continue;
     if (p.name === "groq" && !hasGroq) continue;
     if (p.name === "openai" && !hasOpenAI) continue;
     if (p.name === "openrouter" && !hasOpenRouter) continue;
@@ -1091,6 +1126,7 @@ export async function runOrchestrator
       } else if (shortErr.length > 80) {
         shortErr = shortErr.substring(0, 80) + "...";
       }
+      failureReasons.push(`${p.name} (${p.model}): ${shortErr}`);
       safeConsoleLog(`[Orchestrator Info] Provider ${p.name} (${p.model}) status: ${shortErr}. Switching to next provider...`);
       onProgress?.({ type: 'status', data: { message: `Provider ${p.name} (${shortErr}). Switching provider...` } });
     }
@@ -1099,7 +1135,7 @@ export async function runOrchestrator
   // FINAL FALLBACK — honest message (no mock success, no infrastructure leak).
   safeConsoleLog("[Orchestrator] All providers exhausted. Returning honest fallback.");
   try {
-    return await callTurboFallback(messages, executionLogs, onProgress);
+    return await callTurboFallback(messages, executionLogs, onProgress, failureReasons);
   } catch (e) {
     return {
       text: "⚠️ Orchestrator gagal total. Cek console server & API key di .env.",

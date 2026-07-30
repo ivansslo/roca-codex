@@ -81,22 +81,46 @@ async function startServer() {
   });
 
   app.get("/api/models", (req, res) => {
-    const models = [
-      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Fast)", provider: "gemini", icon: "⚡", active: true },
-      { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Reasoning)", provider: "gemini", icon: "🧠", active: true },
-      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "gemini", icon: "⚡", active: true },
-      { id: "qwen2.5:7b", name: "Qwen 2.5 7B (Local OCI/Ollama)", provider: "oci", icon: "🦙", active: true },
-      { id: "llama-3.3-70b-versatile", name: "Groq Llama 3.3 70B", provider: "groq", icon: "⚡", active: true },
-      { id: "gpt-4o", name: "OpenAI GPT-4o", provider: "openai", icon: "🟢", active: true },
-      { id: "gpt-4o-mini", name: "OpenAI GPT-4o mini", provider: "openai", icon: "🟢", active: true },
-      { id: "deepseek/deepseek-r1", name: "OpenRouter DeepSeek R1", provider: "openrouter", icon: "🌐", active: true },
-      { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", name: "Cloudflare Llama 3.3", provider: "cfai", icon: "☁️", active: true }
+    // Ketersediaan dihitung dari kunci yang benar-benar ada, bukan dikeraskan
+    // ke `active: true`. Sebelumnya kesembilan model selalu tampil aktif di UI
+    // meski hanya satu penyedia yang punya kunci, sehingga memilih model mana
+    // pun terlihat sah tetapi gagal tanpa penjelasan.
+    const have = {
+      gemini: !!(process.env.GEMINI_API_KEY || process.env.GEMINI_KEY || process.env.GOOGLE_API_KEY),
+      groq: !!(process.env.GROQ_KEY || process.env.GROQ_API_KEY),
+      openai: !!(process.env.OPENAI_API_KEY || process.env.OPENAI_KEY),
+      openrouter: !!(process.env.OPENROUTER_API_KEY || process.env.OR_KEY || process.env.OPENROUTER_KEY || process.env.DEEPSEK_API_KEY),
+      cfai: !!(process.env.CF_AI_TOKEN || process.env.CF_TOKEN),
+      oci: !!(process.env.OCI_OLLAMA_URL || process.env.OLLAMA_URL),
+    } as Record<string, boolean>;
+
+    const catalog = [
+      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Fast)", provider: "gemini", icon: "⚡" },
+      { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Reasoning)", provider: "gemini", icon: "🧠" },
+      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "gemini", icon: "⚡" },
+      { id: "qwen2.5:7b", name: "Qwen 2.5 7B (Local OCI/Ollama)", provider: "oci", icon: "🦙" },
+      { id: "llama-3.3-70b-versatile", name: "Groq Llama 3.3 70B", provider: "groq", icon: "⚡" },
+      { id: "gpt-4o", name: "OpenAI GPT-4o", provider: "openai", icon: "🟢" },
+      { id: "gpt-4o-mini", name: "OpenAI GPT-4o mini", provider: "openai", icon: "🟢" },
+      { id: "deepseek/deepseek-r1", name: "OpenRouter DeepSeek R1", provider: "openrouter", icon: "🌐" },
+      { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", name: "Cloudflare Llama 3.3", provider: "cfai", icon: "☁️" }
     ];
-    const activeProvider = process.env.PROVIDER || (
-      (process.env.GEMINI_API_KEY || process.env.GEMINI_KEY || process.env.GOOGLE_API_KEY) ? "gemini" :
-      (process.env.GROQ_KEY || process.env.GROQ_API_KEY) ? "groq" : "gemini"
-    );
-    res.json({ active_provider: activeProvider, models });
+
+    const models = catalog.map(m => ({
+      ...m,
+      active: have[m.provider] === true,
+      reason: have[m.provider] ? undefined : `Tidak ada kunci API untuk ${m.provider}`,
+    }));
+
+    const activeProvider = process.env.PROVIDER ||
+      (have.gemini ? "gemini" : have.openai ? "openai" : have.groq ? "groq" :
+       have.openrouter ? "openrouter" : "gemini");
+
+    res.json({
+      active_provider: activeProvider,
+      configured_providers: Object.keys(have).filter(k => have[k]),
+      models,
+    });
   });
 
   // Non-streaming chat
