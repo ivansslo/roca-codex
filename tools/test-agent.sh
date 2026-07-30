@@ -61,123 +61,142 @@ if [ -z "$FOUND_KEY" ]; then
 fi
 
 # ── 2 & 3. Kunci diterima penyedia? ──────────────────────────────
-step "2. Kunci diterima penyedia?"
+# Uji SETIAP penyedia mengikuti urutan PROVIDER. Versi sebelumnya memakai
+# rantai elif yang mendahulukan OpenAI apa pun isi PROVIDER, lalu `exit 1`
+# begitu OpenAI gagal — sehingga penyedia utama tidak pernah diuji dan
+# seluruh gunanya failover hilang.
+step "2-3. Uji tiap penyedia (urut sesuai PROVIDER)"
 
-if [ -n "${OPENAI_API_KEY:-${OPENAI_KEY:-}}" ]; then
-  KEY="${OPENAI_API_KEY:-$OPENAI_KEY}"
+CHAIN="${PROVIDER:-openai}"
+WORKING=""
+FAILED=""
 
-  body=$(curl -s --max-time 25 -H "Authorization: Bearer $KEY" https://api.openai.com/v1/models)
-  if printf '%s' "$body" | grep -q '"object": *"list"'; then
-    ok "Kunci sah, dan berizin membaca daftar model"
-  elif printf '%s' "$body" | grep -qi 'insufficient_permission\|missing scopes'; then
-    warn "Kunci SAH, tapi tidak berizin untuk /v1/models"
-    hint "Itu wajar untuk kunci restricted. Yang penting endpoint chat di bawah."
-  elif printf '%s' "$body" | grep -qi 'invalid_api_key\|Incorrect API key'; then
-    bad "Kunci DITOLAK — salah atau sudah dicabut"
-    hint "Buat baru di platform.openai.com/api-keys, lalu:"
-    hint "  rocvault edit ~/.config/rocagent/app.env.vault"
-    exit 1
-  else
-    warn "Respons tak terduga:"
-    printf '%s' "$body" | head -3 | sed 's/^/      /'
-  fi
+_try_openai() {
+  local KEY="${OPENAI_API_KEY:-${OPENAI_KEY:-}}"
+  [ -n "$KEY" ] || { printf '  %s·%s openai      tidak ada kunci\n' "$c_dim" "$c_rst"; return 1; }
 
-  step "3. Model apa yang boleh dipakai kunci ini?"
-  # Kunci OpenAI terikat pada satu PROJECT, dan project bisa membatasi daftar
-  # model yang diizinkan. Kunci yang sah dengan scope benar tetap ditolak bila
-  # model yang diminta tidak ada di daftar itu. Jadi jangan menebak: tanyakan.
-  avail=$(printf '%s' "$body" | grep -o '"id": *"[^"]*"' | sed 's/.*"id": *"//; s/"//' | sort)
-  if [ -n "$avail" ]; then
-    n=$(printf '%s\n' "$avail" | wc -l)
-    ok "$n model dapat diakses kunci ini"
-    printf '%s\n' "$avail" | head -8 | sed 's/^/      /'
-    [ "$n" -gt 8 ] && printf '      … dan %s lainnya\n' "$((n - 8))"
+  local list model
+  list=$(curl -s --max-time 25 -H "Authorization: Bearer $KEY" https://api.openai.com/v1/models)
+  model=$(printf '%s' "$list" | grep -o '"id": *"gpt-4o-mini"' | head -1)
+  [ -n "$model" ] && model="gpt-4o-mini" || \
+    model=$(printf '%s' "$list" | grep -o '"id": *"gpt-[^"]*"' | sed 's/.*"gpt-/gpt-/; s/"//' | head -1)
+  [ -n "$model" ] || model="gpt-4o-mini"
 
-    # Apakah model yang dipakai RocAgent ada di antaranya?
-    if printf '%s\n' "$avail" | grep -qx "gpt-4o-mini"; then
-      ok "gpt-4o-mini tersedia (dipakai RocAgent sebagai default)"
-      TEST_MODEL="gpt-4o-mini"
-    else
-      bad "gpt-4o-mini TIDAK tersedia untuk kunci ini"
-      hint "RocAgent memanggil gpt-4o-mini dan gpt-4o secara default."
-      hint "Kalau project membatasi 'Allowed models', tambahkan keduanya, atau"
-      hint "pakai kunci dari project tanpa pembatasan."
-      TEST_MODEL=$(printf '%s\n' "$avail" | grep -E '^gpt-' | head -1)
-      [ -n "$TEST_MODEL" ] && hint "Menguji dengan $TEST_MODEL sebagai gantinya."
-    fi
-  else
-    warn "Daftar model tidak terbaca — menguji dengan gpt-4o-mini"
-    TEST_MODEL="gpt-4o-mini"
-  fi
-
-  step "4. Kunci boleh memanggil endpoint chat?"
-  # Inilah yang benar-benar dipakai agent. Kunci bisa lolos langkah 2 tapi gagal
-  # di sini kalau scope "Model capabilities" masih Request, bukan Write.
-  [ -n "${TEST_MODEL:-}" ] || TEST_MODEL="gpt-4o-mini"
-  chat=$(curl -s --max-time 30 -H "Authorization: Bearer $KEY" \
-         -H 'Content-Type: application/json' \
-         -d "{\"model\":\"$TEST_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":5}" \
+  local chat
+  chat=$(curl -s --max-time 30 -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+         -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":5}" \
          https://api.openai.com/v1/chat/completions)
+
   if printf '%s' "$chat" | grep -q '"choices"'; then
-    ok "Endpoint chat BEKERJA dengan $TEST_MODEL"
-  elif printf '%s' "$chat" | grep -qi 'insufficient_permission\|missing scopes'; then
-    bad "Kunci sah tapi TIDAK BOLEH memanggil chat"
-    hint "platform.openai.com/api-keys -> edit kunci ->"
-    hint "  Model capabilities: ubah dari 'Request' menjadi 'Write'"
-    exit 1
+    ok "openai      BEKERJA ($model)"; return 0
   elif printf '%s' "$chat" | grep -qi 'insufficient_quota\|exceeded your current quota'; then
-    bad "Kuota/saldo habis"
-    hint "platform.openai.com/settings/organization/billing"
-    exit 1
+    bad "openai      saldo kredit habis"
+    hint "Spend limit hanya BATAS ATAS, bukan saldo. OpenAI API prabayar:"
+    hint "platform.openai.com/settings/organization/billing -> Add to credit balance"
+    return 1
+  elif printf '%s' "$chat" | grep -qi 'insufficient_permission\|missing scopes'; then
+    bad "openai      kunci tanpa izin chat"
+    hint "Kunci -> Model capabilities: ubah 'Request' menjadi 'Write'"
+    return 1
   elif printf '%s' "$chat" | grep -qi 'model_not_found\|does not exist'; then
-    bad "Model $TEST_MODEL ditolak project ini"
-    hint "platform.openai.com -> project -> Limits -> Allowed models"
-    hint "Tambahkan gpt-4o-mini, atau ubah model default RocAgent."
-    exit 1
+    bad "openai      $model ditolak project"
+    hint "Project Settings -> Limits -> Allowed models"
+    return 1
+  elif printf '%s' "$chat" | grep -qi 'invalid_api_key\|Incorrect API key'; then
+    bad "openai      kunci ditolak"; return 1
   else
-    bad "Panggilan chat gagal:"
-    printf '%s' "$chat" | head -5 | sed 's/^/      /'
-    exit 1
+    bad "openai      gagal: $(printf '%s' "$chat" | head -c 120)"; return 1
   fi
-elif [ -n "${GROQ_KEY:-}" ]; then
-  step "3. Groq: endpoint chat"
-  chat=$(curl -s --max-time 30 -H "Authorization: Bearer $GROQ_KEY" \
-         -H 'Content-Type: application/json' \
-         -d '{"model":"llama-3.3-70b-versatile","messages":[{"role":"user","content":"ping"}],"max_tokens":5}' \
+}
+
+_try_groq() {
+  [ -n "${GROQ_KEY:-}" ] || { printf '  %s·%s groq        tidak ada kunci\n' "$c_dim" "$c_rst"; return 1; }
+  local chat
+  chat=$(curl -s --max-time 30 -H "Authorization: Bearer $GROQ_KEY" -H 'Content-Type: application/json' \
+         -d '{"model":"openai/gpt-oss-120b","messages":[{"role":"user","content":"ping"}],"max_tokens":5}' \
          https://api.groq.com/openai/v1/chat/completions)
   if printf '%s' "$chat" | grep -q '"choices"'; then
-    ok "Groq BEKERJA"
+    ok "groq        BEKERJA (openai/gpt-oss-120b)"; return 0
+  elif printf '%s' "$chat" | grep -qi 'model_not_found\|decommissioned\|does not exist'; then
+    bad "groq        model tidak tersedia"
+    hint "Groq rutin memensiunkan model: console.groq.com/docs/models"
+    return 1
   elif printf '%s' "$chat" | grep -qi 'invalid_api_key\|Invalid API Key'; then
-    bad "GROQ_KEY ditolak — salah atau dicabut"
-    hint "console.groq.com/keys"
-    exit 1
-  elif printf '%s' "$chat" | grep -qi 'model_not_found\|does not exist\|decommissioned'; then
-    bad "Model llama-3.3-70b-versatile tidak tersedia lagi di Groq"
-    hint "Groq rutin menonaktifkan model lama. Cek console.groq.com/docs/models"
-    printf '%s' "$chat" | head -3 | sed 's/^/      /'
-    exit 1
+    bad "groq        kunci ditolak — console.groq.com/keys"; return 1
   else
-    bad "Groq gagal:"
-    printf '%s' "$chat" | head -4 | sed 's/^/      /'
-    exit 1
+    bad "groq        gagal: $(printf '%s' "$chat" | head -c 120)"; return 1
   fi
+}
 
-elif [ -n "${GEMINI_API_KEY:-${GEMINI_KEY:-}}" ]; then
-  step "3. Gemini: endpoint chat"
-  GK="${GEMINI_API_KEY:-$GEMINI_KEY}"
+_try_gemini() {
+  local GK="${GEMINI_API_KEY:-${GEMINI_KEY:-${X_GOOG_API_KEY:-}}}"
+  [ -n "$GK" ] || { printf '  %s·%s gemini      tidak ada kunci\n' "$c_dim" "$c_rst"; return 1; }
+  local chat
   chat=$(curl -s --max-time 30 -H 'Content-Type: application/json' \
          -d '{"contents":[{"parts":[{"text":"ping"}]}]}' \
          "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$GK")
   if printf '%s' "$chat" | grep -q '"candidates"'; then
-    ok "Gemini BEKERJA"
+    ok "gemini      BEKERJA (gemini-2.5-flash)"; return 0
+  elif printf '%s' "$chat" | grep -qi 'API_KEY_INVALID\|API key not valid'; then
+    bad "gemini      kunci ditolak — aistudio.google.com/apikey"; return 1
+  elif printf '%s' "$chat" | grep -qi 'RESOURCE_EXHAUSTED\|quota'; then
+    bad "gemini      kuota habis"; return 1
   else
-    bad "Gemini gagal:"
-    printf '%s' "$chat" | head -4 | sed 's/^/      /'
-    exit 1
+    bad "gemini      gagal: $(printf '%s' "$chat" | head -c 120)"; return 1
   fi
+}
 
+_try_openrouter() {
+  local K="${OR_KEY:-${OPENROUTER_API_KEY:-}}"
+  [ -n "$K" ] || { printf '  %s·%s openrouter  tidak ada kunci\n' "$c_dim" "$c_rst"; return 1; }
+  local chat
+  chat=$(curl -s --max-time 30 -H "Authorization: Bearer $K" -H 'Content-Type: application/json' \
+         -d '{"model":"google/gemini-2.0-flash-001","messages":[{"role":"user","content":"ping"}],"max_tokens":5}' \
+         https://openrouter.ai/api/v1/chat/completions)
+  if printf '%s' "$chat" | grep -q '"choices"'; then
+    ok "openrouter  BEKERJA"; return 0
+  else
+    bad "openrouter  gagal: $(printf '%s' "$chat" | head -c 120)"; return 1
+  fi
+}
+
+_try_cfai() {
+  [ -n "${CF_AI_TOKEN:-${CF_TOKEN:-}}" ] && [ -n "${CF_ACCOUNT_ID:-}" ] || {
+    printf '  %s·%s cfai        perlu CF_AI_TOKEN + CF_ACCOUNT_ID\n' "$c_dim" "$c_rst"; return 1; }
+  local K="${CF_AI_TOKEN:-$CF_TOKEN}" chat
+  chat=$(curl -s --max-time 30 -H "Authorization: Bearer $K" -H 'Content-Type: application/json' \
+         -d '{"messages":[{"role":"user","content":"ping"}]}' \
+         "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/ai/run/@cf/meta/llama-3.3-70b-instruct-fp8-fast")
+  if printf '%s' "$chat" | grep -q '"success": *true'; then
+    ok "cfai        BEKERJA"; return 0
+  else
+    bad "cfai        gagal: $(printf '%s' "$chat" | head -c 120)"; return 1
+  fi
+}
+
+IFS=',' read -ra _plist <<< "$CHAIN"
+for _p in "${_plist[@]}"; do
+  _p=$(printf '%s' "$_p" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+  case "$_p" in
+    xgoog|google|googleai) _p=gemini ;;
+    deepseek|deepsek)      _p=openrouter ;;
+    cf|cloudflare)         _p=cfai ;;
+  esac
+  case "$_p" in
+    openai|groq|gemini|openrouter|cfai)
+      if "_try_$_p"; then WORKING="$WORKING $_p"; else FAILED="$FAILED $_p"; fi ;;
+    *) printf '  %s·%s %-11s tidak dikenal\n' "$c_dim" "$c_rst" "$_p" ;;
+  esac
+done
+
+printf '\n'
+if [ -n "$WORKING" ]; then
+  ok "Penyedia siap:$WORKING"
+  [ -n "$FAILED" ] && warn "Gagal (dilewati failover):$FAILED"
 else
-  warn "Tidak ada kunci yang bisa diuji langsung — lanjut ke uji server"
+  bad "TIDAK ADA penyedia yang bekerja:$FAILED"
+  hint "Agent tidak akan bisa menjawab sampai minimal satu diperbaiki."
+  exit 1
 fi
 
 # ── 4. Server ────────────────────────────────────────────────────
