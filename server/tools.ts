@@ -159,7 +159,16 @@ export const toolImplementations: Record<string, Function> = {
     }
   },
 
-  read_project_file: async (args: { filename: string }) => {
+  /**
+   * Membaca berkas proyek.
+   *
+   * lineNumbers (default true) memberi awalan nomor baris pada tiap baris.
+   * Tanpa itu model harus menghitung baris sendiri dari teks mentah, dan itu
+   * tidak bisa diandalkan - pengujian menunjukkan jawaban "baris 50" meleset
+   * tiga baris. startLine/endLine membatasi rentang supaya pertanyaan tentang
+   * satu baris tidak perlu memuat seluruh berkas ke konteks.
+   */
+  read_project_file: async (args: { filename: string; lineNumbers?: boolean; startLine?: number; endLine?: number }) => {
     try {
       const filePath = path.join(process.cwd(), args.filename);
       const relative = path.relative(process.cwd(), filePath);
@@ -171,7 +180,36 @@ export const toolImplementations: Record<string, Function> = {
       }
       const stats = fs.statSync(filePath);
       const MAX_READ = 256 * 1024; // 256 KB — keep tool results small for the model
-      const content = fs.readFileSync(filePath, 'utf-8');
+      let content = fs.readFileSync(filePath, 'utf-8');
+
+      const allLines = content.split('\n');
+      const totalLines = allLines.length;
+
+      // Rentang baris: 1-based dan inklusif, sesuai cara orang menyebut baris.
+      const from = Math.max(1, args.startLine || 1);
+      const to = Math.min(totalLines, args.endLine || totalLines);
+      const sliced = (args.startLine || args.endLine) ? allLines.slice(from - 1, to) : allLines;
+      const offset = (args.startLine || args.endLine) ? from : 1;
+
+      if (args.lineNumbers !== false) {
+        const width = String(offset + sliced.length - 1).length;
+        content = sliced
+          .map((l, i) => `${String(offset + i).padStart(width, ' ')}| ${l}`)
+          .join('\n');
+      } else {
+        content = sliced.join('\n');
+      }
+
+      if (args.startLine || args.endLine) {
+        return {
+          status: "success",
+          content,
+          filename: args.filename,
+          lineRange: `${from}-${to}`,
+          totalLines,
+          note: "Nomor baris berasal dari berkas, bukan hitungan model.",
+        };
+      }
       if (stats.size > MAX_READ) {
         return {
           status: "success",

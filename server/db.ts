@@ -86,11 +86,14 @@ const DEFAULT_SCHEMA: DatabaseSchema = {
     },
     {
       name: "read_project_file",
-      description: "Read the content of a specific file in the workspace.",
+      description: "Read a file from the workspace. Output is prefixed with real line numbers (e.g. '50| const x = 1'), so quote those numbers directly instead of counting lines yourself. Use startLine/endLine when the question is about a specific line or region.",
       parameters: {
         type: "object",
         properties: {
-          filename: { type: "string", description: "The name of the file to read (e.g. 'server.ts')." }
+          filename: { type: "string", description: "The name of the file to read (e.g. 'server.ts')." },
+          startLine: { type: "number", description: "First line to return, 1-based and inclusive. Omit to start at the top." },
+          endLine: { type: "number", description: "Last line to return, inclusive. Omit to read to the end." },
+          lineNumbers: { type: "boolean", description: "Line-number prefixes. Default true; set false only when you need the raw text verbatim." }
         },
         required: ["filename"]
       }
