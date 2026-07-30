@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# rocagent-cli — pembungkus supaya CLI bisa dipanggil dari direktori mana pun.
+#
+# rocagent-cli.ts adalah skrip npm di dalam repo, jadi ia butuh cwd repo agar
+# tsx dan node_modules ditemukan. Wrapper ini yang mengurusnya, sehingga
+# perintahnya bisa dipakai seperti program biasa.
+#
+# Copyright (c) 2026 Ivan Ssl (ivansslo). All rights reserved.
+set -euo pipefail
+
+# --help harus jawab tanpa menyentuh jaringan, supaya pemeriksaan installer
+# ("apakah perintah ini jalan?") tidak bergantung pada server yang hidup.
+case "${1:-}" in
+  -h|--help|help)
+    cat <<'HELP'
+rocagent-cli — klien terminal untuk server RocAgent
+
+  rocagent-cli                 sesi interaktif
+  rocagent-cli "prompt"        sekali jalan
+
+Perintah dalam sesi:
+  /model [id]     lihat / ganti model
+  /persona [id]   lihat / ganti persona
+  /new            sesi baru
+  /stat           status server & penyedia
+  /clear /help /exit
+
+Butuh server berjalan:
+  cd ~/RocAgent && rocvault run ~/.config/rocagent/app.env.vault -- npm start
+
+Env:
+  ROCAGENT_DIR    lokasi repo (default ~/RocAgent)
+  ROCAGENT_VAULT  vault app.env (default ~/.config/rocagent/app.env.vault)
+  ROCAGENT_URL    alamat server (default http://127.0.0.1:3000)
+HELP
+    exit 0 ;;
+esac
+
+REPO="${ROCAGENT_DIR:-$HOME/RocAgent}"
+[ -f "$REPO/package.json" ] || {
+  printf '\033[31m✗\033[0m Repo tidak ditemukan di %s\n' "$REPO" >&2
+  printf '    Set lokasinya:  export ROCAGENT_DIR=/path/ke/RocAgent\n' >&2
+  exit 1
+}
+cd "$REPO"
+
+# Kunci model dibutuhkan CLI. Kalau env belum termuat, muat dari vault.
+if [ -z "${WEB_PASSWORD:-}" ]; then
+  VAULT="${ROCAGENT_VAULT:-$HOME/.config/rocagent/app.env.vault}"
+  if [ -f "$VAULT" ] && command -v rocvault >/dev/null 2>&1; then
+    exec rocvault run "$VAULT" -- npx tsx rocagent-cli.ts "$@"
+  fi
+  printf '\033[33m⚠\033[0m  WEB_PASSWORD belum ada dan vault tidak ditemukan.\n' >&2
+  printf '    %s\n' "$VAULT" >&2
+fi
+
+exec npx tsx rocagent-cli.ts "$@"

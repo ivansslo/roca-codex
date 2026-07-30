@@ -82,7 +82,7 @@ fi
 
 # ── 3. Symlink ────────────────────────────────────────────────────
 printf '\nMemasang perintah...\n'
-for t in rocvault rocagent-vm; do
+for t in rocvault rocagent-vm rocagent-cli; do
   [ -f "$SRC_DIR/$t" ] || die "Tidak ada: $SRC_DIR/$t"
   chmod +x "$SRC_DIR/$t"
   ln -sf "$SRC_DIR/$t" "$BIN_DIR/$t"
@@ -190,7 +190,7 @@ fi
 printf '\nVerifikasi...\n'
 export PATH="$BIN_DIR:$PATH"
 FAIL=0
-for t in rocvault rocagent-vm; do
+for t in rocvault rocagent-vm rocagent-cli; do
   if command -v "$t" >/dev/null 2>&1 && "$t" --help >/dev/null 2>&1; then
     ok "$t berjalan"
   else
