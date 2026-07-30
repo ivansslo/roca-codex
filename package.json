@@ -1,6 +1,6 @@
 {
   "name": "rocagent",
-  "version": "5.20.0",
+  "version": "5.21.0",
   "description": "Autonomous AI agent & orchestrator that executes real shell commands on your own hardware.",
   "author": "Ivan Ssl (ivansslo)",
   "license": "SEE LICENSE IN LICENSE",
@@ -18,8 +18,9 @@
     "clean": "rm -rf dist server.js",
     "postinstall": "node scripts/postinstall.js",
     "lint": "tsc --noEmit",
-    "test": "tsx server/__tests__/commandGuard.test.ts && tsx server/__tests__/shellGuard.integration.test.ts && bash tools/__tests__/rocvault.test.sh",
+    "test": "tsx server/__tests__/commandGuard.test.ts && tsx server/__tests__/shellGuard.integration.test.ts && tsx server/__tests__/auth.test.ts && bash tools/__tests__/rocvault.test.sh",
     "test:guard": "tsx server/__tests__/commandGuard.test.ts",
+    "test:auth": "tsx server/__tests__/auth.test.ts",
     "test:vault": "bash tools/__tests__/rocvault.test.sh",
     "cli": "tsx rocagent-cli.ts"
   },

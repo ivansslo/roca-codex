@@ -15,6 +15,20 @@ const PUBLIC_PATHS = new Set(['/api/health', '/api/models', '/api/auth/status', 
 
 interface TokenEntry { token: string; expiresAt: number; }
 
+// --- Login brute-force limiter ----------------------------------------------
+// There was previously no throttle at all: an unlimited number of password
+// guesses per second. Loopback-by-default mitigates this, but the moment HOST
+// is pointed at a tailnet it becomes live. Per source-IP: MAX_LOGIN_FAILURES
+// wrong passwords locks the client out for LOGIN_LOCK_MS. In-memory by design
+// (single-user personal server); counters reset on restart.
+const MAX_LOGIN_FAILURES = 5;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+const loginAttempts = new Map<string, { count: number; lockedUntil: number }>();
+
+function clientKey(req: Request): string {
+  return (req.ip || req.socket?.remoteAddress || 'unknown').toString();
+}
+
 function constantTimeCompare(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
@@ -46,11 +60,26 @@ export function createAuthMiddleware(password: string): RequestHandler {
   return (req: Request, res: Response, next: NextFunction): void => {
     // Login endpoint handles its own auth and issues a token
     if (req.method === 'POST' && req.path === '/api/auth/login') {
-      const provided = typeof req.body?.password === 'string' ? req.body.password : '';
-      if (!constantTimeCompare(provided, password)) {
-        res.status(401).json({ error: 'Invalid password' });
+      const key = clientKey(req);
+      const now = Date.now();
+      const rec = loginAttempts.get(key);
+      if (rec && rec.lockedUntil > now) {
+        const waitMin = Math.ceil((rec.lockedUntil - now) / 60000);
+        res.status(429).json({ error: `Too many failed attempts. Try again in ${waitMin} minute(s).` });
         return;
       }
+      const provided = typeof req.body?.password === 'string' ? req.body.password : '';
+      if (!constantTimeCompare(provided, password)) {
+        const count = (rec ? rec.count : 0) + 1;
+        loginAttempts.set(key, { count, lockedUntil: count >= MAX_LOGIN_FAILURES ? now + LOGIN_LOCK_MS : 0 });
+        // Prune stale entries so a hostile source cannot grow the map forever.
+        if (loginAttempts.size > 10000) {
+          for (const [k, v] of loginAttempts) if (v.lockedUntil <= now) loginAttempts.delete(k);
+        }
+        res.status(401).json({ error: 'Invalid password', attemptsLeft: Math.max(0, MAX_LOGIN_FAILURES - count) });
+        return;
+      }
+      loginAttempts.delete(key);
       prune();
       const token = randomBytes(32).toString('hex');
       validTokens.set(token, { token, expiresAt: Date.now() + TOKEN_TTL_MS });

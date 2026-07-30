@@ -445,8 +445,16 @@ class Database {
     }
   }
 
+  // Logs live in memory and are rewritten to db.json on every entry — an
+  // unbounded array made the file (and every history endpoint) grow forever.
+  // Keep the newest MAX_LOG_ENTRIES; older ones are dropped.
+  private static readonly MAX_LOG_ENTRIES = 2000;
+
   addLog(log: ExecutionLog) {
     this.data.logs.push(log);
+    if (this.data.logs.length > Database.MAX_LOG_ENTRIES) {
+      this.data.logs = this.data.logs.slice(-Database.MAX_LOG_ENTRIES);
+    }
     this.save();
   }
 

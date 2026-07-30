@@ -31,7 +31,7 @@ copyright holder.
 
 | | |
 |---|---|
-| Version | 5.20.0 |
+| Version | 5.21.0 |
 | Stage | Active development — hardening phase |
 | Runtime | Node.js 20+, Termux (aarch64) or Linux (x86_64) |
 | Licence | Proprietary, all rights reserved |
@@ -68,6 +68,21 @@ reads, `rm -rf`, and history-destroying git operations.
 
 Guard mode is set with `SHELL_GUARD=enforce|warn|off` (default `enforce`).
 Every decision is logged with the tool name, verdict, and command.
+
+**Hardening around the edges.**
+
+- `/api/ssh/exec` and the `ssh_run` tool share the same guard choke point.
+- `http_request` refuses URLs that resolve to private, loopback or link-local
+  addresses (cloud metadata `169.254.169.254`, the `100.x` tailnet, the LAN)
+  and re-validates every redirect hop — SSRF protection.
+- `self_develop_capability` *execution* is **off by default**: snippets run with
+  full Node privileges, so enabling them would bypass the guard entirely.
+  Opt in deliberately with `SELF_DEV_EXECUTE=true`.
+- Login is rate-limited: 5 wrong passwords from one address locks it for 15
+  minutes.
+- `/api/env/config` returns secrets masked (last 4 chars only); a masked value
+  submitted back can never overwrite the real one.
+- `db.json` logs are capped at 2000 entries.
 
 ---
 
@@ -238,7 +253,7 @@ server/
   tools.ts              Tool implementations (file, shell, git, http, ssh)
   commandGuard.ts       Shell command inspection — see Security model
   authMiddleware.ts     Timing-safe password auth, token cookies
-  db.ts                 SQLite persistence: sessions, memories, logs
+  db.ts                 JSON persistence (db.json): sessions, memories, capped logs
   scheduler.ts          Background routines
   __tests__/            Guard unit + integration tests
 src/                    React frontend (Vite)

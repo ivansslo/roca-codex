@@ -1,6 +1,6 @@
 {
-  "name": "DevAgent Orchestrator",
-  "description": "Autonomous developer agent with tool-calling capabilities and task orchestration.",
+  "name": "RocAgent",
+  "description": "Autonomous AI agent & orchestrator that executes real shell commands on your own hardware.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

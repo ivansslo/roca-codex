@@ -60,3 +60,35 @@ PORT=3000
 ## Catatan
 - Token-streaming Gemini butuh `GEMINI_API_KEY` asli untuk muncul per-token; tanpa key, alur fallback jujur yang muncul (sudah diuji).
 - `rocd/` (Python), `n8n/`, `oci/`, `termux-rocd/` tidak diubah.
+
+---
+
+## 2026-07-30 — Hardening babak 2 (temuan review keamanan F1–F6 + perbaikan kualitas)
+
+### Keamanan
+- **F1 — celah bypass guard ditutup.** `self_develop_capability` → `execute` kini **nonaktif default**
+  (`SELF_DEV_EXECUTE=true` untuk mengaktifkan secara sadar) + screening heuristik snippet
+  (menolak `child_process`, `require(`, `eval`, `new Function`, akses `process.`, dsb.).
+  Gate ini otomatis berlaku juga untuk cron scheduler.
+- **F2 — `/api/ssh/exec` kini melewati `commandGuard`** (sebelumnya tanpa guard sama sekali);
+  `guardShell` diekspor dari `tools.ts` sebagai satu choke point.
+- **F3 — anti-SSRF pada tool `http_request`:** resolusi DNS dulu, tolak IP privat/loopback/
+  link-local (metadata cloud `169.254.169.254`, tailnet `100.x`, LAN), tolak kredensial di URL,
+  redirect diikuti manual dengan validasi ulang tiap hop (maks 5).
+- **F4 — `/api/workspace/zip-dir` memakai `execFile` tanpa shell** (argumen array) — injeksi
+  perintah lewat nama path berisi `"` tidak lagi mungkin.
+- **F5 — permukaan kredensial & brute force:** login rate-limit (5 gagal → kunci 15 menit, per IP);
+  `GET /api/env/config` membalut nilai rahasia (hanya 4 karakter terakhir); nilai yang masih
+  bermask tidak bisa menimpa rahasia asli; mode `rawEnv` di `POST /api/env/update` kini berfungsi
+  (sebelumnya selalu 400) dengan perlindungan mask yang sama.
+- **F6 — containment path** memakai `path.relative` (menutup sibling-prefix bug); scrub **semua**
+  varian token GitHub di output git/push; fallback repo default → `ivansslo/RocAgent`.
+
+### Kualitas / koreksi
+- Auto-build background kini **mengantre satu rebuild** bila ada edit selama build berjalan
+  (sebelumnya edit terbuang → `dist/` basi).
+- Log `db.json` dibatasi 2000 entri terbaru.
+- Test baru `server/__tests__/auth.test.ts` (13 kasus: 401 tanpa token, alur cookie, path publik,
+  lockout 429); `npm test` kini menjalankan guard + auth + rocvault.
+- README: klaim "SQLite" dikoreksi (persistensi JSON `db.json`); `metadata.json` diselaraskan
+  dengan nama produk.

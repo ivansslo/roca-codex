@@ -9,6 +9,8 @@ import path from 'path';
 import { db } from './db';
 import { exec } from 'child_process';
 import util from 'util';
+import net from 'net';
+import dns from 'dns';
 import { checkCommand, auditLine, resolveMode } from './commandGuard';
 
 const execAsync = util.promisify(exec);
@@ -22,7 +24,9 @@ const execAsync = util.promisify(exec);
  * string — the same string the shell will receive. Guarding the escaped form
  * would let an attacker hide operators behind HTML entities.
  */
-function guardShell(tool: string, command: string) {
+// Exported so HTTP endpoints in server.ts share the SAME choke point as the
+// agent tools (previously /api/ssh/exec ran commands with no guard at all).
+export function guardShell(tool: string, command: string) {
   const mode = resolveMode();
   const verdict = checkCommand(command, mode);
   console.log(auditLine(tool, command, verdict));
@@ -89,17 +93,24 @@ export type ToolProgressCallback = (event: { type: string; data: any }) => void;
 // Fire-and-forget rebuild: previously each write/edit AWAITED `npm run build` (15s), which serially
 // stalled every agent turn. Now we kick it off in the background and return immediately.
 let buildInFlight = false;
+let buildQueuedLabel: string | null = null;
 function triggerBackgroundBuild(fileLabel: string) {
-  if (buildInFlight) return; // coalesce overlapping rebuilds
+  // Queue-at-most-one: previously an edit arriving while a build ran was simply
+  // dropped, leaving dist/ stale until the NEXT edit happened to trigger a build.
+  // Edits during a build now schedule exactly one follow-up rebuild.
+  if (buildInFlight) { buildQueuedLabel = fileLabel; return; }
   buildInFlight = true;
   console.log(`[AutoBuild] Background rebuild triggered by ${fileLabel}...`);
-  exec('PATH="./node_modules/.bin:$PATH" npm run build', { timeout: 60000 }, (error, stdout) => {
+  exec('PATH="./node_modules/.bin:$PATH" npm run build', { timeout: 120000 }, (error, stdout) => {
     buildInFlight = false;
     if (error) {
       console.warn(`[AutoBuild] Build output: ${error.message}`);
     } else {
       console.log(`[AutoBuild] Bundle dist/ compiled successfully (bg).`);
     }
+    const queued = buildQueuedLabel;
+    buildQueuedLabel = null;
+    if (queued) triggerBackgroundBuild(queued);
   });
 }
 
@@ -148,6 +159,71 @@ export async function sshExec(command: string): Promise<{ status: string; stdout
     conn.connect({ host, port, username, ...creds, readyTimeout: 15000 });
   });
 }
+
+// --- SSRF guard for http_request -------------------------------------------
+// The agent may ask this server to fetch arbitrary URLs. Unchecked, that reaches
+// cloud instance metadata (169.254.169.254 — leaks OCI/AWS credentials), the
+// tailnet (100.64.0.0/10), the LAN, and loopback services. Hostnames are
+// resolved first and private ranges refused. Residual gap, stated honestly:
+// DNS rebinding between this check and connect() is not defeated here — the
+// durable fix is OS egress rules, same as for the shell guard.
+function isPrivateOrLocalIp(ip: string): boolean {
+  let v = ip.trim().toLowerCase();
+  if (v.startsWith('::ffff:')) v = v.slice(7);            // IPv4-mapped IPv6
+  const zone = v.indexOf('%');
+  if (zone !== -1) v = v.slice(0, zone);                  // strip IPv6 zone id
+  if (v === '::1' || v === '::') return true;             // IPv6 loopback/unspecified
+  if (v.includes(':')) {
+    const firstSeg = v.split(':')[0];
+    const n = parseInt(firstSeg || '0', 16);
+    // fe80::/10 link-local, fc00::/7 unique-local
+    return (n & 0xffc0) === 0xfe80 || (n & 0xfe00) === 0xfc00;
+  }
+  const parts = v.split('.');
+  if (parts.length !== 4) return true;                    // odd literal (decimal/octal tricks): distrust
+  const nums = parts.map(p => Number(p));
+  if (nums.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return true;
+  const [a, b] = nums;
+  if (a === 0 || a === 10 || a === 127) return true;      // "this net", private, loopback
+  if (a === 100 && b >= 64 && b <= 127) return true;      // CGNAT — includes Tailscale 100.x
+  if (a === 169 && b === 254) return true;                // link-local + cloud metadata
+  if (a === 172 && b >= 16 && b <= 31) return true;       // private
+  if (a === 192 && (b === 168 || b === 0)) return true;   // private / protocol assignments
+  if (a >= 224) return true;                              // multicast / reserved / broadcast
+  return false;
+}
+
+async function resolveHostIps(hostname: string): Promise<string[]> {
+  if (net.isIP(hostname)) return [hostname];
+  try {
+    const results = await dns.promises.lookup(hostname, { all: true, verbatim: true });
+    return results.map(r => r.address);
+  } catch {
+    return []; // DNS failure is treated as unsafe by the caller
+  }
+}
+
+export async function checkUrlSafe(rawUrl: string): Promise<{ safe: boolean; reason?: string }> {
+  let parsed: URL;
+  try { parsed = new URL(rawUrl); } catch { return { safe: false, reason: 'Invalid URL' }; }
+  if (!/^https?:$/.test(parsed.protocol)) return { safe: false, reason: 'Only http/https allowed' };
+  if (parsed.username || parsed.password) return { safe: false, reason: 'Credentials embedded in the URL are not allowed' };
+  const ips = await resolveHostIps(parsed.hostname);
+  if (!ips.length) return { safe: false, reason: `Cannot resolve host: ${parsed.hostname}` };
+  if (ips.some(isPrivateOrLocalIp)) {
+    return { safe: false, reason: `Blocked (SSRF protection): ${parsed.hostname} resolves to a private/loopback/link-local address. Cloud metadata, tailnet and LAN services are unreachable through this tool.` };
+  }
+  return { safe: true };
+}
+
+// --- Heuristic denylist for self_develop_capability snippets ----------------
+// Snippets run via new Function() with full Node privileges — a path the shell
+// command guard cannot see, equivalent to an unguarded eval of model-written
+// code. Execution is therefore OFF by default (see SELF_DEV_EXECUTE below) and
+// even then screened. Like the shell guard, this screen is a seatbelt: pattern
+// matching cannot prove arbitrary code is safe.
+const SELF_DEV_DENIED_RE =
+  /(child_process|\bspawn\b|\bexec(Sync|FileSync|File)?\s*\(|\brequire\s*\(|\bimport\s*\(|\beval\s*\(|new\s+Function|\bprocess\s*[.[]|globalThis|global\s*[.[]|module\s*[.[]|__dirname|__filename|\.env\b|getenv)/i;
 
 export const toolImplementations: Record<string, Function> = {
   list_project_files: async () => {
@@ -587,10 +663,33 @@ export const toolImplementations: Record<string, Function> = {
         const id = db.saveSelfCapability(name, codeSnippet, purpose || "General optimization", category || "general");
         return { status: "success", message: `Successfully registered self-development capability ${name} with ID ${id}` };
       } else if (action === 'execute') {
+        // DISABLED by default. The snippet runs with full Node privileges, so
+        // `execute` bypasses the shell command guard entirely (a snippet could
+        // shell out via child_process without any inspection). The operator
+        // opts in deliberately with SELF_DEV_EXECUTE=true and a restart. This
+        // gate also covers the cron scheduler, which calls this same function.
+        if ((process.env.SELF_DEV_EXECUTE || "").toLowerCase() !== "true") {
+          return {
+            status: "error",
+            blocked: true,
+            code: "SELF_DEV_DISABLED",
+            message: "Eksekusi self_develop dinonaktifkan secara default: snippet berjalan dengan hak penuh Node dan melewati shell guard. Set SELF_DEV_EXECUTE=true di .env hanya bila Anda memahami risikonya, lalu restart server.",
+          };
+        }
         if (!name) return { status: "error", message: "Capability name is required to execute." };
         const capabilities = db.getSelfCapabilities();
         const found = capabilities.find(c => c.name === name);
         if (!found) return { status: "error", message: `Capability ${name} not found.` };
+
+        const risky = SELF_DEV_DENIED_RE.exec(found.codeSnippet || "");
+        if (risky) {
+          return {
+            status: "error",
+            blocked: true,
+            code: "SELF_DEV_SNIPPET_RISK",
+            message: `Snippet ditolak: mengandung pola berisiko ("${risky[0]}") yang bisa melewati inspeksi. Tulis ulang tanpa child_process/process/require/eval, atau jalankan manual di terminal.`,
+          };
+        }
 
         const executionLogs = [
           `[ROBOT_SELF_IMPROVEMENT] Initiating self-guided optimizer: ${found.name}`,
@@ -674,21 +773,40 @@ export const toolImplementations: Record<string, Function> = {
     try {
       const rawUrl = (args.url || "").trim();
       if (!rawUrl) return { status: "error", message: "url is required" };
-      let parsed: URL;
-      try { parsed = new URL(rawUrl); } catch { return { status: "error", message: "Invalid URL" }; }
-      if (!/^https?:$/.test(parsed.protocol)) return { status: "error", message: "Only http/https allowed" };
+
+      // SSRF guard: validate BEFORE any network I/O.
+      const initial = await checkUrlSafe(rawUrl);
+      if (!initial.safe) {
+        return { status: "error", blocked: true, code: "SSRF_BLOCKED", message: initial.reason };
+      }
 
       const method = (args.method || "GET").toUpperCase();
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 20000);
-      const opts: any = { method, signal: controller.signal, headers: { ...(args.headers || {}) } };
+      const opts: any = { method, redirect: "manual", signal: controller.signal, headers: { ...(args.headers || {}) } };
       if (method === "POST" && args.body !== undefined) {
         opts.headers["Content-Type"] = opts.headers["Content-Type"] || "application/json";
         opts.body = typeof args.body === "string" ? args.body : JSON.stringify(args.body);
       }
-      let resp: Response;
+
+      // Redirects are walked manually: fetch() following redirects on its own
+      // would let a "safe" public URL bounce the request to an internal address,
+      // silently bypassing the check above. Every hop is re-validated (max 5).
+      let resp!: Response;
+      let current = rawUrl;
       try {
-        resp = await fetch(parsed.href, opts);
+        for (let hop = 0; ; hop++) {
+          resp = await fetch(current, opts);
+          const location = resp.headers.get("location");
+          if (resp.status < 300 || resp.status >= 400 || !location) break;
+          if (hop >= 5) return { status: "error", message: "Too many redirects (max 5)" };
+          const nextUrl = new URL(location, current).href;
+          const hopCheck = await checkUrlSafe(nextUrl);
+          if (!hopCheck.safe) {
+            return { status: "error", blocked: true, code: "SSRF_REDIRECT", message: `Redirect blocked: ${hopCheck.reason}` };
+          }
+          current = nextUrl;
+        }
       } finally {
         clearTimeout(timeout);
       }
@@ -703,7 +821,7 @@ export const toolImplementations: Record<string, Function> = {
         httpStatus: resp.status,
         ok: resp.ok,
         contentType: ct,
-        url: parsed.href,
+        url: current,
         json,
         text: truncated ? text.slice(0, MAX) : text,
         truncated,
@@ -783,7 +901,11 @@ export const toolImplementations: Record<string, Function> = {
     const action = (args.action || "status").toLowerCase();
     const branch = args.branch || "main";
     const token = process.env.GITHUB_PAT || process.env.GH_TOKEN || process.env.GITHUB_TOKEN || "";
-    const scrub = (t: string) => (token ? String(t || "").split(token).join("***") : String(t || ""));
+    // Scrub EVERY configured token variant, not only the one used for this call —
+    // previously GH_TOKEN could leak into error output when GITHUB_PAT was the
+    // active push token, and vice versa.
+    const tokenVariants = [process.env.GITHUB_PAT, process.env.GH_TOKEN, process.env.GITHUB_TOKEN].filter((t): t is string => !!t);
+    const scrub = (t: string) => tokenVariants.reduce((s, tok) => s.split(tok).join("***"), String(t || ""));
     const run = async (cmd: string) => {
       try { const r = await execAsync(cmd, { timeout: 60000, maxBuffer: 1024 * 1024 }); return { ok: true, stdout: scrub(r.stdout), stderr: scrub(r.stderr) }; }
       catch (e: any) { return { ok: false, stdout: scrub(e.stdout || ""), stderr: scrub(e.stderr || e.message || "") }; }

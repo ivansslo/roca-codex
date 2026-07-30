@@ -14,7 +14,7 @@ import { runOrchestrator } from "./server/orchestrator";
 import { db } from "./server/db";
 import { initScheduler } from "./server/scheduler";
 import { createAuthMiddleware } from "./server/authMiddleware";
-import { toolImplementations, sshExec } from "./server/tools";
+import { toolImplementations, sshExec, guardShell } from "./server/tools";
 
 if (dns && dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder('ipv4first');
@@ -51,6 +51,25 @@ if (WEB_PASSWORD.length < MIN_PASSWORD_LENGTH) {
 // Override deliberately with HOST=... only when you know the network is trusted
 // (e.g. a Tailscale-only address).
 const HOST = process.env.HOST || "127.0.0.1";
+
+// Containment check done right: `fullPath.startsWith(cwd)` also passes for a
+// SIBLING directory (`/repo-evil` starts with `/repo`). path.relative() cannot
+// be fooled that way. Every path-taking endpoint below uses this.
+function isInsideCwd(fullPath: string): boolean {
+  const rel = path.relative(process.cwd(), fullPath);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+// Secrets are masked in API responses: an authenticated session, a screenshot
+// or a shared screen must not casually reveal full key material. Fields keep
+// their last 4 characters so keys remain recognisable. POST /api/env/update
+// refuses to write a value that still carries this mask (see below).
+const ENV_SECRET_RE = /(KEY|TOKEN|SECRET|PASS|PWD|PAT|URI|PRIVATE|CREDENTIAL)/;
+const ENV_MASK_PREFIX = "••••";
+function maskEnvValue(key: string, value: string): string {
+  if (!value || !ENV_SECRET_RE.test(key)) return value;
+  return value.length <= 4 ? ENV_MASK_PREFIX : ENV_MASK_PREFIX + value.slice(-4);
+}
 
 async function startServer() {
   const app = express();
@@ -300,18 +319,21 @@ async function startServer() {
     try {
       const targetPath = (req.query.path as string || "").replace(/\.\./g, "");
       const fullPath = path.resolve(process.cwd(), targetPath || ".");
-      // Containment check
-      if (!fullPath.startsWith(process.cwd())) {
+      if (!isInsideCwd(fullPath)) {
         return res.status(400).json({ error: "Path outside workspace" });
       }
       if (!fs.existsSync(fullPath)) return res.status(404).json({ error: "Target path not found" });
-      const { exec } = await import("child_process");
+      // execFile WITHOUT a shell: previously the target path travelled inside a
+      // double-quoted shell string — a `"` in the name escaped the quotes and
+      // injected arbitrary commands. Argument arrays cannot inject. `zip`
+      // interprets its own -x patterns internally, so no shell is needed.
+      const { execFile } = await import("child_process");
       const { promisify } = await import("util");
-      const execAsync = promisify(exec);
+      const execFileAsync = promisify(execFile) as (file: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
       const safeName = targetPath ? targetPath.replace(/[/\\?%*:|"<>]/g, '_') : 'workspace-full';
       const zipName = `${safeName}-archive.zip`;
       const tempZipPath = path.join(process.cwd(), zipName);
-      await execAsync(`zip -r -q "${tempZipPath}" "${targetPath || '.'}" -x "node_modules/*" ".git/*" "dist/*" "*.zip"`);
+      await execFileAsync("zip", ["-r", "-q", tempZipPath, targetPath || ".", "-x", "node_modules/*", ".git/*", "dist/*", "*.zip"]);
       res.download(tempZipPath, zipName, () => {
         if (fs.existsSync(tempZipPath)) fs.unlinkSync(tempZipPath);
       });
@@ -323,7 +345,7 @@ async function startServer() {
       const targetPath = (req.query.path as string || "").replace(/\.\./g, "");
       if (!targetPath) return res.status(400).json({ error: "Path parameter required" });
       const fullPath = path.resolve(process.cwd(), targetPath);
-      if (!fullPath.startsWith(process.cwd())) return res.status(400).json({ error: "Path outside workspace" });
+      if (!isInsideCwd(fullPath)) return res.status(400).json({ error: "Path outside workspace" });
       if (!fs.existsSync(fullPath)) return res.status(404).json({ error: "Path not found" });
       if (fs.statSync(fullPath).isDirectory()) fs.rmSync(fullPath, { recursive: true, force: true });
       else fs.unlinkSync(fullPath);
@@ -445,7 +467,7 @@ async function startServer() {
       const { filename, content } = req.body;
       if (!filename || content === undefined) return res.status(400).json({ error: "Filename and content required" });
       const fullPath = path.resolve(process.cwd(), filename);
-      if (!fullPath.startsWith(process.cwd())) return res.status(400).json({ error: "Path outside workspace" });
+      if (!isInsideCwd(fullPath)) return res.status(400).json({ error: "Path outside workspace" });
       fs.mkdirSync(path.dirname(fullPath), { recursive: true });
       fs.writeFileSync(fullPath, content);
       res.json({ status: "success", path: filename });
@@ -465,7 +487,7 @@ async function startServer() {
       const filePath = (req.query.path as string || "").replace(/\.\./g, "");
       if (!filePath) return res.status(400).send("Path parameter required");
       const fullPath = path.resolve(process.cwd(), filePath);
-      if (!fullPath.startsWith(process.cwd())) return res.status(400).send("Path outside workspace");
+      if (!isInsideCwd(fullPath)) return res.status(400).send("Path outside workspace");
       if (!fs.existsSync(fullPath)) return res.status(404).send("File not found");
       const content = fs.readFileSync(fullPath, "utf-8");
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -493,33 +515,79 @@ async function startServer() {
     try {
       const envPath = path.join(process.cwd(), ".env");
       const rawEnv = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf-8") : "";
-      const envVars: { key: string; value: string }[] = [];
+      // Values are masked before leaving the server (see maskEnvValue). The UI
+      // still shows which keys are set and their last 4 chars, but the full
+      // secret never travels to a browser session, log or screenshot.
+      const envVars: { key: string; value: string; isSet: boolean; masked: boolean }[] = [];
+      const maskedRawLines: string[] = [];
       for (const line of rawEnv.split("\n")) {
         const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
-        if (m) envVars.push({ key: m[1], value: m[2].replace(/^["']|["']$/g, "") });
+        if (m) {
+          const v = m[2].replace(/^["']|["']$/g, "");
+          const masked = maskEnvValue(m[1], v);
+          envVars.push({ key: m[1], value: masked, isSet: v.length > 0, masked: masked !== v });
+          maskedRawLines.push(`${m[1]}=${masked}`);
+        } else {
+          maskedRawLines.push(line); // comments and blank lines pass through
+        }
       }
-      res.json({ rawEnv, envVars });
+      res.json({ rawEnv: maskedRawLines.join("\n"), envVars, masking: true });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
   app.post("/api/env/update", (req, res) => {
     try {
-      const { envs } = req.body;
-      if (!Array.isArray(envs)) return res.status(400).json({ error: "envs array required" });
+      const { envs, rawEnv } = req.body;
+      if (!Array.isArray(envs) && typeof rawEnv !== "string") {
+        return res.status(400).json({ error: "envs array or rawEnv string required" });
+      }
       const envPath = path.join(process.cwd(), ".env");
       let lines = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf-8").split("\n") : [];
-      for (const item of envs) {
-        const key = String(item?.key || "");
-        if (!/^[A-Z0-9_]+$/.test(key)) continue;
-        const v = String(item?.value ?? "");
-        process.env[key] = v;
-        const idx = lines.findIndex(l => new RegExp(`^\\s*${key}\\s*=`).test(l));
-        if (idx >= 0) lines[idx] = `${key}=${v}`;
-        else lines.push(`${key}=${v}`);
+      let applied = 0, keptMasked = 0;
+
+      // A value still carrying the display mask means "field was shown to the
+      // user, never re-typed" — it must NEVER overwrite the real secret on disk.
+      const isMaskedValue = (v: string) => v.trimStart().startsWith(ENV_MASK_PREFIX);
+
+      if (Array.isArray(envs)) {
+        for (const item of envs) {
+          const key = String(item?.key || "");
+          if (!/^[A-Z0-9_]+$/.test(key)) continue;
+          const v = String(item?.value ?? "");
+          if (isMaskedValue(v)) { keptMasked++; continue; }
+          process.env[key] = v;
+          const idx = lines.findIndex(l => new RegExp(`^\\s*${key}\\s*=`).test(l));
+          if (idx >= 0) lines[idx] = `${key}=${v}`;
+          else lines.push(`${key}=${v}`);
+          applied++;
+        }
+      } else {
+        // Raw text mode (this path previously did not exist — the UI's raw
+        // editor silently failed with 400). Comments and blanks pass through;
+        // masked secret lines keep the value currently on disk; new plain
+        // values are applied to both the file and process.env.
+        const currentVal = new Map<string, string>();
+        for (const l of lines) {
+          const m = l.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
+          if (m) currentVal.set(m[1], m[2]);
+        }
+        lines = (rawEnv as string).split("\n").map((l: string) => {
+          const m = l.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
+          if (!m) return l;
+          const key = m[1], val = m[2];
+          if (isMaskedValue(val)) {
+            if (currentVal.has(key)) { keptMasked++; return `${key}=${currentVal.get(key)}`; }
+            return l; // masked value for an unknown key: store nothing new
+          }
+          process.env[key] = val;
+          applied++;
+          return l;
+        });
       }
+
       fs.writeFileSync(envPath, lines.join("\n").replace(/\n{3,}/g, "\n\n") + "\n", "utf-8");
       try { dotenv.config({ override: true }); } catch {}
-      res.json({ success: true, message: ".env diperbarui & dimuat ulang" });
+      res.json({ success: true, applied, keptMasked, message: `.env diperbarui (${applied} nilai diterapkan, ${keptMasked} mask dipertahankan) & dimuat ulang` });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
@@ -622,6 +690,10 @@ async function startServer() {
   app.post("/api/ssh/exec", async (req, res) => {
     try {
       const command = String(req.body?.command || "");
+      // Same choke point as the ssh_run TOOL — this endpoint previously ran
+      // commands with no guard at all. SHELL_GUARD applies here too.
+      const blocked = guardShell("api/ssh/exec", command);
+      if (blocked) return res.status(403).json(blocked);
       const r = await sshExec(command);
       res.json(r);
     } catch (err: any) { res.status(500).json({ status: "error", error: err.message }); }
@@ -726,6 +798,10 @@ async function startServer() {
   });
 
   app.post("/api/github/push", async (req, res) => {
+    // Scrub EVERY token variant in output — not only the active one — so an
+    // error message can never echo a different configured token.
+    const tokensToScrub = [req.body?.token, process.env.GITHUB_PAT, process.env.GITHUB_OAUTH_TOKEN, process.env.GH_TOKEN].filter((t): t is string => typeof t === "string" && t.length > 0);
+    const scrubAll = (t: string) => tokensToScrub.reduce((s, tok) => s.split(tok).join("***"), String(t || ""));
     try {
       const { exec } = await import("child_process");
       const { promisify } = await import("util");
@@ -739,11 +815,9 @@ async function startServer() {
       await execAsync('git add . && git commit -m "chore: update via ROCAgents" || true');
       const pushUrl = `https://${token}@github.com/${repo}.git`;
       const { stdout, stderr } = await execAsync(`git push ${pushUrl} ${branch}`, { timeout: 45000 });
-      const scrub = (t: string) => String(t || "").split(token).join("***");
-      res.json({ status: "success", message: `Push berhasil ke ${repo}:${branch}.`, stdout: scrub(stdout), stderr: scrub(stderr) });
+      res.json({ status: "success", message: `Push berhasil ke ${repo}:${branch}.`, stdout: scrubAll(stdout), stderr: scrubAll(stderr) });
     } catch (err: any) {
-      const tok = req.body?.token || process.env.GITHUB_PAT || "";
-      res.status(500).json({ status: "error", error: String(err.message || "").split(tok).join("***") });
+      res.status(500).json({ status: "error", error: scrubAll(String(err.message || "")) });
     }
   });
 
