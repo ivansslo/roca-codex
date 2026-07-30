@@ -27,7 +27,7 @@ git rev-parse --git-dir >/dev/null 2>&1 || { bad "Bukan repo git."; exit 1; }
 GD=$(git rev-parse --git-dir)
 
 step "Kondisi saat ini"
-printf '  HEAD        : %s\n' "$(git log --oneline -1 2>/dev/null)"
+printf '  HEAD        : %s\n' "$(git --no-pager log --oneline -1 2>/dev/null)"
 printf '  branch      : %s\n' "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
 printf '  perubahan   : %s berkas\n' "$(git status --porcelain | wc -l)"
 
@@ -57,7 +57,7 @@ if [ "$STUCK" = yes ]; then
     rm -rf "$GD/rebase-apply" "$GD/rebase-merge"
     ok "Dibersihkan"
   fi
-  printf '  HEAD sekarang: %s\n' "$(git log --oneline -1)"
+  printf '  HEAD sekarang: %s\n' "$(git --no-pager log --oneline -1)"
 fi
 
 step "Perubahan lokal yang belum di-commit"
@@ -96,5 +96,7 @@ printf '  2. Terapkan   : git am <berkas.patch>\n'
 printf '  3. Kalau gagal: git am --abort   lalu jalankan skrip ini lagi\n'
 echo
 printf '  Patch sudah pernah diterapkan? Cek dulu supaya tidak dobel:\n'
-printf '    git log --oneline -5\n'
+printf '    git --no-pager log --oneline -5\n'
+  printf '    (--no-pager penting: di Termux pager bisa ter-suspend\n'
+  printf '     dan outputnya tidak pernah tampil — terlihat seperti riwayat kosong)\n'
 echo
