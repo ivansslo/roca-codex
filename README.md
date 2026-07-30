@@ -103,6 +103,8 @@ supports `kdf` and HMAC.
 | `rocagent-vm` | Drive this repo on a remote VM from a phone, over SSH |
 | `verify-rotation.sh` | Prove old credentials are actually dead after rotating |
 | `unhook-ubuntu.sh` | Remove the Termux auto-launch container hook |
+| `test-agent.sh` | Layered check of why the agent is not replying |
+| `install-bashrc-helpers.sh` | Shell helpers: `oci`, `awsx`, `ts`, `dock`, `roc` |
 
 On the VM: `rocagent-vm pull && rocagent-vm setup-tools`
 
