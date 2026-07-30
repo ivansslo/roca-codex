@@ -31,7 +31,7 @@ copyright holder.
 
 | | |
 |---|---|
-| Version | 5.21.0 |
+| Version | 5.22.0 |
 | Stage | Active development — hardening phase |
 | Runtime | Node.js 20+, Termux (aarch64) or Linux (x86_64) |
 | Licence | Proprietary, all rights reserved |
@@ -79,10 +79,15 @@ Every decision is logged with the tool name, verdict, and command.
   full Node privileges, so enabling them would bypass the guard entirely.
   Opt in deliberately with `SELF_DEV_EXECUTE=true`.
 - Login is rate-limited: 5 wrong passwords from one address locks it for 15
-  minutes.
+  minutes. Rotating `WEB_PASSWORD` at runtime invalidates all live sessions.
 - `/api/env/config` returns secrets masked (last 4 chars only); a masked value
   submitted back can never overwrite the real one.
 - `db.json` logs are capped at 2000 entries.
+
+**The durable boundary is the OS, not the guard.** For the VM, run the server
+as a dedicated unprivileged user with a hardened systemd unit:
+`sudo bash tools/setup-isolated-user.sh` — full recipe and Termux guidance in
+[`docs/ISOLASI-OS.md`](docs/ISOLASI-OS.md).
 
 ---
 

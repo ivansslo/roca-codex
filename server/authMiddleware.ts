@@ -51,6 +51,9 @@ function parseCookies(header: string | undefined): Record<string, string> {
 // (previously the middleware always called next(), so the "password protection" did nothing).
 export function createAuthMiddleware(password: string): RequestHandler {
   const validTokens = new Map<string, TokenEntry>();
+  // Mutable on runtime rotation: /api/env/update can change WEB_PASSWORD without
+  // a restart. The closure below tracks the live value.
+  let activePassword = password;
 
   const prune = () => {
     const now = Date.now();
@@ -58,6 +61,17 @@ export function createAuthMiddleware(password: string): RequestHandler {
   };
 
   return (req: Request, res: Response, next: NextFunction): void => {
+    // Password rotated at runtime? Every token and lockout state must die
+    // immediately — otherwise old-password sessions stay valid until their 24h
+    // TTL even though the operator changed the password. Checked on EVERY
+    // request, not only at login, so the validation path is covered too.
+    const livePassword = process.env.WEB_PASSWORD || activePassword;
+    if (livePassword !== activePassword) {
+      activePassword = livePassword;
+      validTokens.clear();
+      loginAttempts.clear();
+    }
+
     // Login endpoint handles its own auth and issues a token
     if (req.method === 'POST' && req.path === '/api/auth/login') {
       const key = clientKey(req);
@@ -69,7 +83,7 @@ export function createAuthMiddleware(password: string): RequestHandler {
         return;
       }
       const provided = typeof req.body?.password === 'string' ? req.body.password : '';
-      if (!constantTimeCompare(provided, password)) {
+      if (!constantTimeCompare(provided, activePassword)) {
         const count = (rec ? rec.count : 0) + 1;
         loginAttempts.set(key, { count, lockedUntil: count >= MAX_LOGIN_FAILURES ? now + LOGIN_LOCK_MS : 0 });
         // Prune stale entries so a hostile source cannot grow the map forever.

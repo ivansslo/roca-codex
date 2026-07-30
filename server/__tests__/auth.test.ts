@@ -90,5 +90,33 @@ console.log('\n-- brute-force lockout (per IP) --');
   ok(res.statusCode === 200, 'IP lain tidak terdampak lockout');
 }
 
+console.log('\n-- rotasi password saat runtime (tanpa restart) --');
+{
+  // login dengan password awal → dapat cookie
+  const res = mkRes();
+  mw(mkReq('POST', '/api/auth/login', { password: 'test-password-123' }, undefined, '7.7.7.7'), res, () => {});
+  const cookie = (res.headers['set-cookie'] || '').split(';')[0];
+  ok(cookie.includes('rocagents_auth_token='), 'login awal OK sebelum rotasi');
+
+  // operator mengganti WEB_PASSWORD lewat /api/env/update (tanpa restart)
+  process.env.WEB_PASSWORD = 'password-baru-pasca-rotasi';
+  try {
+    // token lama harus langsung mati
+    const res2 = mkRes(); let called = false;
+    mw(mkReq('GET', '/api/chat-sessions', undefined, cookie, '7.7.7.7'), res2, () => { called = true; });
+    ok(res2.statusCode === 401 && !called, 'token lama langsung invalid setelah WEB_PASSWORD diganti');
+
+    // password lama ditolak, password baru diterima
+    const res3 = mkRes();
+    mw(mkReq('POST', '/api/auth/login', { password: 'test-password-123' }, undefined, '7.7.7.8'), res3, () => {});
+    ok(res3.statusCode === 401, 'password lama ditolak setelah rotasi');
+    const res4 = mkRes();
+    mw(mkReq('POST', '/api/auth/login', { password: 'password-baru-pasca-rotasi' }, undefined, '7.7.7.8'), res4, () => {});
+    ok(res4.statusCode === 200, 'password baru langsung berlaku tanpa restart');
+  } finally {
+    delete process.env.WEB_PASSWORD; // pulihkan ke password closure
+  }
+}
+
 console.log(`\n${pass} lulus, ${fail} gagal`);
 process.exit(fail ? 1 : 0);

@@ -48,9 +48,12 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
         setGeminiKey(varsMap['GEMINI_API_KEY'] || '');
         setGroqKey(varsMap['GROQ_KEY'] || '');
         setOpenAiKey(varsMap['OPENAI_API_KEY'] || '');
-        setTailscaleKey(varsMap['OR_KEY'] || varsMap['TAILSCALE_AUTH_KEY'] || '');
-        setTailscaleIp(varsMap['CF_AI_TOKEN'] || '');
-        setGithubPat(varsMap['CF_ACCOUNT_ID'] || '');
+        // Mapping field ↔ env key sempat tertukar (bad merge): Tailscale memuat
+        // OR_KEY, IP memuat CF_AI_TOKEN, PAT memuat CF_ACCOUNT_ID — bisa menimpa
+        // kredensial yang salah saat form disimpan. Dikembalikan ke pasangan benar.
+        setTailscaleKey(varsMap['TAILSCALE_KEY'] || varsMap['TAILSCALE_AUTH_KEY'] || '');
+        setTailscaleIp(varsMap['TAILSCALE_IP'] || '');
+        setGithubPat(varsMap['GITHUB_PAT'] || '');
         setClerkPk(varsMap['CLERK_PK'] || '');
         setClerkSk(varsMap['CLERK_SK'] || '');
       }
@@ -76,7 +79,11 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
     setErrorNotice(null);
 
     try {
-      const updatedEnvs = {
+      // Server expects envs as an ARRAY of {key, value} — the form previously
+      // posted a plain object map, which the API always rejected (400), so the
+      // save button never worked. Masked values (••••xxxx) are skipped
+      // server-side, so leaving a field untouched keeps the real secret.
+      const envs = Object.entries({
         GEMINI_API_KEY: geminiKey,
         GROQ_KEY: groqKey,
         OPENAI_API_KEY: openAiKey,
@@ -85,12 +92,12 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
         GITHUB_PAT: githubPat,
         CLERK_PK: clerkPk,
         CLERK_SK: clerkSk
-      };
+      }).map(([key, value]) => ({ key, value }));
 
       const res = await fetch('/api/env/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ envs: updatedEnvs })
+        body: JSON.stringify({ envs })
       });
 
       if (res.ok) {

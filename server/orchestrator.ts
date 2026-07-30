@@ -759,110 +759,7 @@ async function callOciModel(messages: any[], modelName: string, executionLogs: a
   }
 }
 
-// 7. AuroRa-x Personal Coding AI Engine (OCI High-Speed + Codex-Web Integration)
-async function callAuroRaX(messages: any[], modelName: string, executionLogs: any[], onProgress?: Function) {
-  onProgress?.({ type: 'status', data: { message: "Initializing AuroRa-x Personal Coding AI via Codex-Web..." } });
-
-  try {
-    const endpoint = process.env.OCI_MODEL_ENDPOINT || process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
-    const auroraPrompt = `You are AuroRa-x — Ivan Ssl's Personal Coding AI Engine.\n\n${OWNER_SYSTEM_PROMPT_BASE}`;
-    
-    const reqMessages = [
-      { role: "system", content: auroraPrompt },
-      ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
-    ];
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500);
-
-    const resp = await fetch(`${endpoint}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model: "rocspace-initial",
-        prompt: reqMessages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\n\n"),
-        stream: false
-      })
-    }).finally(() => clearTimeout(timeoutId));
-
-    const data = await resp.json();
-    if (data.response && data.response.trim()) {
-      onProgress?.({ type: 'chunk', data: { text: data.response } });
-      return { text: data.response, logs: executionLogs };
-    }
-  } catch (_) {
-    // Local endpoint offline, delegate to Gemini engine
-  }
-
-  return await callGemini(messages, "gemini-2.5-flash", executionLogs, onProgress);
-}
-
-async function callAuroRaFun(messages: any[], modelName: string, executionLogs: any[], onProgress?: Function) {
-  onProgress?.({ type: 'status', data: { message: "Initializing AuroRa-Fun AI Engine..." } });
-
-  const assistantId = process.env.BACKBOARD_ASSISTANT_ID || "3372ebdd-9e29-44c2-b373-8b693c142e6d";
-  db.saveMemory("AuroRa_Fun_ActiveThread", `Query dispatched to Assistant ${assistantId}`, "AuroRa-Fun");
-
-  return await callGemini(messages, "gemini-2.5-flash", executionLogs, onProgress);
-}
-
-async function callAuroRaRoc(messages: any[], modelName: string, executionLogs: any[], onProgress?: Function) {
-  onProgress?.({ type: 'status', data: { message: "Initializing AuroRa-RoC System AI Engine..." } });
-
-  return await callGemini(messages, "gemini-2.5-flash", executionLogs, onProgress);
-}
-
-// 10. AuroRa-Forty Personal Cognitive Memory & Dialectic Personalization AI Engine
-async function callAuroRaForty(messages: any[], modelName: string, executionLogs: any[], onProgress?: Function) {
-  onProgress?.({ type: 'status', data: { message: "Initializing AuroRa-Forty AI Engine..." } });
-
-  return await callGemini(messages, "gemini-2.5-flash", executionLogs, onProgress);
-}
-
-// 11. Google Labs Jules AI Autonomous Coding Agent Provider
-async function callJulesAgent(messages: any[], modelName: string, executionLogs: any[], onProgress?: Function) {
-  onProgress?.({ type: 'status', data: { message: "Connecting to Google Labs Jules Autonomous Coding Agent..." } });
-
-  try {
-    const julesKey = process.env.JULES_API_KEY || process.env.X_GOOG_API_KEY || "";
-    const repo = process.env.JULES_REPO || "ivansslo/rocagents";
-    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.text || "Refactor code structure";
-
-    onProgress?.({ type: 'status', data: { message: `Google Jules AI: Dispatching session for repo ${repo}...` } });
-
-    const resp = await fetch("https://jules.googleapis.com/v1alpha/sessions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": julesKey
-      },
-      body: JSON.stringify({
-        prompt: lastUserMsg,
-        sourceContext: {
-          source: `sources/github/${repo}`,
-          githubRepoContext: { startingBranch: "main" }
-        },
-        automationMode: "AUTO_CREATE_PR",
-        title: `RocAgent Task - ${lastUserMsg.substring(0, 30)}`
-      })
-    });
-
-    const data = await resp.json();
-
-    if (data.name || data.id) {
-      const resultText = `🛠️ **Google Jules AI Coding Agent session created successfully!**\n\n- **Session Name/ID**: \`${data.name || data.id}\`\n- **Target Repository**: \`${repo}\` (branch: \`main\`)\n- **Automation Mode**: \`AUTO_CREATE_PR\`\n- **Instruction Dispatched**: "${lastUserMsg}"\n\nJules is currently executing your task in a sandboxed Google Cloud VM and will open a Pull Request upon completion.`;
-      onProgress?.({ type: 'chunk', data: { text: resultText } });
-      return { text: resultText, logs: executionLogs };
-    }
-  } catch (_) {
-    safeConsoleWarn("[Jules Agent] API request failed. Failing over to AuroRa-x...");
-  }
-
-  return await callAuroRaX(messages, "aurora-x", executionLogs, onProgress);
-}
-
-// 12. RoadQwen / Qwen Cloud Provider (Alibaba Cloud DashScope API)
+// 7. RoadQwen / Qwen Cloud Provider (Alibaba Cloud DashScope API)
 async function callRoadQwen(messages: any[], modelName: string, executionLogs: any[], onProgress?: Function, activeFile?: string) {
   const qwenKey = process.env.ROADQWEN_KEY || process.env.QWEN_KEY || process.env.DASHSCOPE_API_KEY;
   if (!qwenKey) throw new Error("ROADQWEN_KEY missing");
@@ -1000,18 +897,6 @@ async function callTurboFallback(_messages: any[], executionLogs: any[], onProgr
 }
 
 // AuroRa-Ulti.X - Most advanced model, same as Gemini 2.5 Flash, self-upgrading capability
-async function callAuroraUltiX(messages: any[], modelName: string, executionLogs: any[], onProgress?: Function) {
-  onProgress?.({ type: 'status', data: { message: "Initializing AuroRa-Ulti.X Ultimate Engine..." } });
-
-  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.text || "";
-  
-  try {
-    db.saveMemory("AuroRa_Ulti_X_SelfUpgrade", `Self-upgrade triggered at ${new Date().toISOString()} for query: ${lastUserMsg.substring(0, 200)}`, "AuroRa-Ulti.X");
-  } catch {}
-
-  return await callGemini(messages, "gemini-2.5-flash", executionLogs, onProgress);
-}
-
 export async function runOrchestrator
 (messages: any[], options: OrchestratorOptions = {}) {
   const hasGemini = !!(process.env.GEMINI_API_KEY || process.env.GEMINI_KEY || process.env.GOOGLE_API_KEY);
@@ -1092,7 +977,12 @@ export async function runOrchestrator
     if (tried.has(key)) continue;
     tried.add(key);
 
-    const isGeminiBased = ["gemini", "aurora-ulti-x", "aurora-roc", "aurora-40", "aurora-fun", "aurora", "aurora-x"].includes(p.name);
+    // Only genuinely distinct providers remain in the chain. The six "aurora-*"/"ulti"
+    // aliases (all identical Gemini wrappers) and jules (an async PR-bot, not a chat
+    // reply) were deleted in v5.22.0 — they added latency and confusion, never a
+    // real fallback. isGeminiBased is kept as a variable because the quota-skip
+    // logic below keys off it.
+    const isGeminiBased = p.name === "gemini";
     if (isGeminiBased && geminiQuotaExhausted) {
       safeConsoleLog(`[Orchestrator] Skipping Gemini-backed provider ${p.name} due to prior quota exhaustion.`);
       continue;
@@ -1106,24 +996,13 @@ export async function runOrchestrator
     if (p.name === "groq" && !hasGroq) continue;
     if (p.name === "openai" && !hasOpenAI) continue;
     if (p.name === "openrouter" && !hasOpenRouter) continue;
-    if (p.name === "jules" && !(process.env.JULES_API_KEY || process.env.X_GOOG_API_KEY)) continue;
     if ((p.name === "cfai" || p.name === "cf") && !(process.env.CF_AI_TOKEN || process.env.CF_TOKEN)) continue;
     if ((p.name === "roadqwen" || p.name === "qwen" || p.name === "qwen-cloud") && !(process.env.ROADQWEN_KEY || process.env.QWEN_KEY || process.env.DASHSCOPE_API_KEY)) continue;
 
     try {
       safeConsoleLog(`[Orchestrator] Attempting provider: ${p.name} (${p.model})`);
       let result: any = null;
-      if (p.name === "aurora-ulti-x" || p.name === "ulti-x" || p.name === "aurora-ulti" || p.name === "ulti") {
-        result = await callAuroraUltiX(messages, p.model, executionLogs, onProgress);
-      } else if (p.name === "aurora-roc" || p.name === "auroraroc") {
-        result = await callAuroRaRoc(messages, p.model, executionLogs, onProgress);
-      } else if (p.name === "aurora-fun" || p.name === "aurorafun") {
-        result = await callAuroRaFun(messages, p.model, executionLogs, onProgress);
-      } else if (p.name === "aurora-40" || p.name === "aurora40" || p.name === "aurora-forty") {
-        result = await callAuroRaForty(messages, p.model, executionLogs, onProgress);
-      } else if (p.name === "aurora" || p.name === "aurora-x") {
-        result = await callAuroRaX(messages, p.model, executionLogs, onProgress);
-      } else if (p.name === "groq") {
+      if (p.name === "groq") {
         result = await callGroq(messages, p.model, executionLogs, onProgress, options.activeFile);
       } else if (p.name === "openai") {
         result = await callOpenAI(messages, p.model, executionLogs, onProgress, options.activeFile);
@@ -1133,8 +1012,6 @@ export async function runOrchestrator
         result = await callGemini(messages, p.model, executionLogs, onProgress, options.activeFile);
       } else if (p.name === "cfai" || p.name === "cf") {
         result = await callCloudflare(messages, p.model, executionLogs, onProgress, options.activeFile);
-      } else if (p.name === "jules" || p.name === "jules-agent") {
-        result = await callJulesAgent(messages, p.model, executionLogs, onProgress);
       } else if (p.name === "roadqwen" || p.name === "qwen" || p.name === "qwen-cloud") {
         result = await callRoadQwen(messages, p.model, executionLogs, onProgress, options.activeFile);
       } else if (p.name === "oci" || p.name === "ollama") {

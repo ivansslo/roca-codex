@@ -92,3 +92,35 @@ PORT=3000
   lockout 429); `npm test` kini menjalankan guard + auth + rocvault.
 - README: klaim "SQLite" dikoreksi (persistensi JSON `db.json`); `metadata.json` diselaraskan
   dengan nama produk.
+
+---
+
+## 2026-07-30 — Babak 3: kebersihan provider, rotasi sesi, test endpoint, isolasi OS (v5.22.0)
+
+### Keamanan & kebenaran
+- **Rotasi password runtime kini menginvalidasi semua sesi.** Mengganti `WEB_PASSWORD` lewat
+  `/api/env/update` (tanpa restart) sebelumnya membiarkan token lama hidup sampai TTL 24 jam;
+  middleware kini memeriksa nilai live tiap request dan membunuh semua token + lockout seketika.
+  Password baru langsung berlaku tanpa restart.
+- **`EnvEditor` diperbaiki (bug bawaan, bukan dari babak 2):** mapping field↔env tertukar
+  (Tailscale←OR_KEY, IP←CF_AI_TOKEN, PAT←CF_ACCOUNT_ID) dikembalikan; payload form yang selalu
+  ditolak server (object, bukan array) kini dikirim sebagai array `{key,value}` — tombol simpan
+  akhirnya benar-benar berfungsi, dan nilai ter-mask aman (diskip server).
+
+### Kebersihan
+- **Dead code provider dihapus** (~140 baris): `callAuroRaX/Fun/Roc/Forty/UltiX` (lima alias
+  Gemini identik) dan `callJulesAgent` (bot PR async, bukan chat) beserta cabang dispatcher &
+  guard kuncinya. Chain tersisa: gemini, groq, openai, openrouter, cfai, roadqwen, oci/ollama.
+
+### Testing
+- `server/__tests__/endpoints.integration.test.ts` (16 kasus): boot server nyata di direktori
+  temp, lalu uji auth wall, traversal & sibling-prefix, injeksi nama path di zip-dir, guard
+  pada `/api/ssh/exec`, masking env end-to-end, 404 handler. `npm test` kini 5 suite.
+- `auth.test.ts` bertambah: skenario rotasi password runtime (token lama mati, password baru
+  langsung aktif).
+
+### Operasional
+- **Isolasi OS akhirnya punya resep:** `docs/ISOLASI-OS.md` (prinsip + matriks lapisan +
+  checklist) dan `tools/setup-isolated-user.sh` (user `rocagent` khusus + systemd unit dengan
+  `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`; menolak jalan di
+  Termux & non-systemd). Komentar "NOT YET DONE" di commandGuard kini menunjuk ke resep ini.

@@ -29,9 +29,11 @@
  *
  *   1. Authentication  — enforced, see server.ts (WEB_PASSWORD is mandatory)
  *   2. Network scope   — enforced, bind is 127.0.0.1 by default
- *   3. OS isolation    — NOT YET DONE: run this on the Oracle VM in a container
- *                        with a dedicated unprivileged user, not on the phone
- *                        with access to the real home directory.
+ *   3. OS isolation    — the durable boundary. Recipe now ships with the repo:
+ *                        docs/ISOLASI-OS.md + tools/setup-isolated-user.sh run
+ *                        the server as a dedicated unprivileged user with a
+ *                        hardened systemd unit on the VM. Do that; this guard
+ *                        then only needs to absorb agent mistakes, not attacks.
  *
  * This guard's honest job is to stop the agent (an LLM that hallucinates) and
  * accidental copy-paste from destroying the machine. It is a seatbelt, not armour.
