@@ -104,6 +104,7 @@ supports `kdf` and HMAC.
 | `verify-rotation.sh` | Prove old credentials are actually dead after rotating |
 | `unhook-ubuntu.sh` | Remove the Termux auto-launch container hook |
 | `test-agent.sh` | Layered check of why the agent is not replying |
+| `fix-git-am.sh` | Clear a stuck `git am` and report what is blocking a patch |
 | `install-bashrc-helpers.sh` | Shell helpers: `oci`, `awsx`, `ts`, `dock`, `roc` |
 
 ### Terminal client
