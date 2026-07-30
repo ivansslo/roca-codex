@@ -82,15 +82,44 @@ if [ -n "${OPENAI_API_KEY:-${OPENAI_KEY:-}}" ]; then
     printf '%s' "$body" | head -3 | sed 's/^/      /'
   fi
 
-  step "3. Kunci boleh memanggil endpoint chat?"
+  step "3. Model apa yang boleh dipakai kunci ini?"
+  # Kunci OpenAI terikat pada satu PROJECT, dan project bisa membatasi daftar
+  # model yang diizinkan. Kunci yang sah dengan scope benar tetap ditolak bila
+  # model yang diminta tidak ada di daftar itu. Jadi jangan menebak: tanyakan.
+  avail=$(printf '%s' "$body" | grep -o '"id": *"[^"]*"' | sed 's/.*"id": *"//; s/"//' | sort)
+  if [ -n "$avail" ]; then
+    n=$(printf '%s\n' "$avail" | wc -l)
+    ok "$n model dapat diakses kunci ini"
+    printf '%s\n' "$avail" | head -8 | sed 's/^/      /'
+    [ "$n" -gt 8 ] && printf '      … dan %s lainnya\n' "$((n - 8))"
+
+    # Apakah model yang dipakai RocAgent ada di antaranya?
+    if printf '%s\n' "$avail" | grep -qx "gpt-4o-mini"; then
+      ok "gpt-4o-mini tersedia (dipakai RocAgent sebagai default)"
+      TEST_MODEL="gpt-4o-mini"
+    else
+      bad "gpt-4o-mini TIDAK tersedia untuk kunci ini"
+      hint "RocAgent memanggil gpt-4o-mini dan gpt-4o secara default."
+      hint "Kalau project membatasi 'Allowed models', tambahkan keduanya, atau"
+      hint "pakai kunci dari project tanpa pembatasan."
+      TEST_MODEL=$(printf '%s\n' "$avail" | grep -E '^gpt-' | head -1)
+      [ -n "$TEST_MODEL" ] && hint "Menguji dengan $TEST_MODEL sebagai gantinya."
+    fi
+  else
+    warn "Daftar model tidak terbaca — menguji dengan gpt-4o-mini"
+    TEST_MODEL="gpt-4o-mini"
+  fi
+
+  step "4. Kunci boleh memanggil endpoint chat?"
   # Inilah yang benar-benar dipakai agent. Kunci bisa lolos langkah 2 tapi gagal
   # di sini kalau scope "Model capabilities" masih Request, bukan Write.
+  [ -n "${TEST_MODEL:-}" ] || TEST_MODEL="gpt-4o-mini"
   chat=$(curl -s --max-time 30 -H "Authorization: Bearer $KEY" \
          -H 'Content-Type: application/json' \
-         -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"ping"}],"max_tokens":5}' \
+         -d "{\"model\":\"$TEST_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":5}" \
          https://api.openai.com/v1/chat/completions)
   if printf '%s' "$chat" | grep -q '"choices"'; then
-    ok "Endpoint chat BEKERJA — agent seharusnya bisa menjawab"
+    ok "Endpoint chat BEKERJA dengan $TEST_MODEL"
   elif printf '%s' "$chat" | grep -qi 'insufficient_permission\|missing scopes'; then
     bad "Kunci sah tapi TIDAK BOLEH memanggil chat"
     hint "platform.openai.com/api-keys -> edit kunci ->"
@@ -101,7 +130,9 @@ if [ -n "${OPENAI_API_KEY:-${OPENAI_KEY:-}}" ]; then
     hint "platform.openai.com/settings/organization/billing"
     exit 1
   elif printf '%s' "$chat" | grep -qi 'model_not_found\|does not exist'; then
-    bad "Model gpt-4o-mini tidak tersedia untuk akun ini"
+    bad "Model $TEST_MODEL ditolak project ini"
+    hint "platform.openai.com -> project -> Limits -> Allowed models"
+    hint "Tambahkan gpt-4o-mini, atau ubah model default RocAgent."
     exit 1
   else
     bad "Panggilan chat gagal:"
@@ -150,7 +181,7 @@ else
 fi
 
 # ── 4. Server ────────────────────────────────────────────────────
-step "4. Server RocAgent"
+step "5. Server RocAgent"
 
 [ -f package.json ] || { bad "Bukan direktori proyek. Jalankan dari ~/RocAgent"; exit 1; }
 [ -f dist/server.cjs ] || { bad "Belum di-build. Jalankan: npm run build"; exit 1; }
@@ -192,7 +223,7 @@ if [ "${usable:-0}" -eq 0 ]; then
 fi
 
 # ── 5. Chat sungguhan ────────────────────────────────────────────
-step "5. Kirim pesan ke agent"
+step "6. Kirim pesan ke agent"
 
 curl -s -c "$TMP/ta-cookie" -X POST -H 'Content-Type: application/json' \
      -d "{\"password\":$(printf '%s' "$WEB_PASSWORD" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/')}" \
