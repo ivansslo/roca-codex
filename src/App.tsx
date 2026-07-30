@@ -158,7 +158,7 @@ export default function App() {
       id: 'session_' + Date.now(),
       title: title || `Agent Chat ${sessions.length + 1}`,
       createdAt: new Date().toISOString(),
-      messages: [{ id: 'welcome_' + Date.now(), role: 'model', text: "🤖 **ROCAgents online.** Ap yang mau kita kerjakan hari ini?" }]
+      messages: [{ id: 'welcome_' + Date.now(), role: 'model', text: "🤖 **RocAgent Orchestrator Online.** Apa yang mau kita kerjakan hari ini?" }]
     };
     try {
       const res = await fetch('/api/chat-sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session: ns }) });

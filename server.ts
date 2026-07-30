@@ -523,16 +523,65 @@ async function startServer() {
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
-  app.get("/api/env/status", (req, res) => {
-    const checks = [
-      { name: "Gemini", keys: ["GEMINI_API_KEY", "GEMINI_KEY", "GOOGLE_API_KEY"] },
-      { name: "Groq", keys: ["GROQ_KEY", "GROQ_API_KEY"] },
-      { name: "OpenAI", keys: ["OPENAI_API_KEY", "OPENAI_KEY"] },
-      { name: "OpenRouter", keys: ["OPENROUTER_API_KEY", "OR_KEY", "OPENROUTER_KEY"] },
-      { name: "Cloudflare AI", keys: ["CF_AI_TOKEN", "CF_TOKEN"] },
-      { name: "GitHub", keys: ["GITHUB_PAT", "GH_TOKEN", "GITHUB_TOKEN"] },
-    ];
-    const providers = checks.map(c => ({ name: c.name, status: c.keys.some(k => process.env[k]) ? "valid" : "missing" }));
+  app.get("/api/env/status", async (req, res) => {
+    // Benar-benar memanggil endpoint tiap penyedia. Versi sebelumnya hanya
+    // memeriksa apakah variabel env terisi lalu melabelinya "valid", sementara
+    // UI mengklaim sedang "pinging REST endpoints & measuring latency". Kunci
+    // yang dicabut atau kuotanya habis tetap tampil hijau, sehingga panel ini
+    // menyesatkan justru ketika paling dibutuhkan.
+    const first = (...names: string[]) => names.map(n => process.env[n]).find(Boolean) || "";
+
+    type P = { name: string; status: "valid" | "invalid" | "missing"; latencyMs?: number; detail?: string };
+
+    const timed = async (name: string, key: string, run: () => Promise<Response>): Promise<P> => {
+      if (!key) return { name, status: "missing" };
+      const t0 = Date.now();
+      try {
+        const r = await run();
+        const latencyMs = Date.now() - t0;
+        if (r.ok) return { name, status: "valid", latencyMs };
+        const body = await r.text().catch(() => "");
+        // Bedakan kunci mati dari kuota habis: keduanya membuat penyedia tidak
+        // bisa dipakai, tapi tindakan perbaikannya sama sekali berbeda.
+        let detail = `HTTP ${r.status}`;
+        if (r.status === 429 || /quota|rate.?limit/i.test(body)) detail = "Kuota / rate limit habis";
+        else if (r.status === 401 || r.status === 403) detail = "Kunci ditolak";
+        else if (/insufficient_quota/i.test(body)) detail = "Saldo kredit habis";
+        return { name, status: "invalid", latencyMs, detail };
+      } catch (e: any) {
+        return { name, status: "invalid", latencyMs: Date.now() - t0, detail: e?.name === "TimeoutError" ? "Timeout" : "Tidak terjangkau" };
+      }
+    };
+
+    const sig = () => AbortSignal.timeout(8000);
+
+    const gemini = first("GEMINI_API_KEY", "GEMINI_KEY", "GOOGLE_API_KEY", "X_GOOG_API_KEY");
+    const groq = first("GROQ_KEY", "GROQ_API_KEY");
+    const openai = first("OPENAI_API_KEY", "OPENAI_KEY");
+    const openrouter = first("OPENROUTER_API_KEY", "OR_KEY", "OPENROUTER_KEY");
+    const cfToken = first("CF_AI_TOKEN", "CF_TOKEN");
+    const cfAcct = first("CF_ACCOUNT_ID");
+
+    const providers = await Promise.all([
+      timed("Gemini", gemini, () => fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${gemini}`, { signal: sig() })),
+      timed("Groq", groq, () => fetch("https://api.groq.com/openai/v1/models",
+        { headers: { Authorization: `Bearer ${groq}` }, signal: sig() })),
+      timed("OpenAI", openai, () => fetch("https://api.openai.com/v1/models",
+        { headers: { Authorization: `Bearer ${openai}` }, signal: sig() })),
+      timed("OpenRouter", openrouter, () => fetch("https://openrouter.ai/api/v1/models",
+        { headers: { Authorization: `Bearer ${openrouter}` }, signal: sig() })),
+      timed("Cloudflare AI", cfToken && cfAcct ? cfToken : "", () => fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${cfAcct}/ai/models/search?per_page=1`,
+        { headers: { Authorization: `Bearer ${cfToken}` }, signal: sig() })),
+    ]);
+
+    // Cloudflare perlu dua nilai; bedakan "belum diisi" dari "ditolak".
+    if (cfToken && !cfAcct) {
+      const i = providers.findIndex(p => p.name === "Cloudflare AI");
+      if (i >= 0) providers[i] = { name: "Cloudflare AI", status: "missing", detail: "CF_ACCOUNT_ID belum diisi" };
+    }
+
     res.json({ providers, checkedAt: new Date().toISOString() });
   });
 
@@ -642,7 +691,7 @@ async function startServer() {
       let localHead = "";
       try { const { stdout } = await execAsync("git rev-parse HEAD", { timeout: 3000 }); localHead = stdout.trim(); } catch (_) {}
 
-      const headers: any = { "User-Agent": "ROCAgents-App", "Accept": "application/vnd.github.v3+json" };
+      const headers: any = { "User-Agent": "RocAgent-App", "Accept": "application/vnd.github.v3+json" };
       if (pat) headers["Authorization"] = `Bearer ${pat}`;
 
       let commits: any[] = [];
@@ -718,7 +767,7 @@ async function startServer() {
   }
 
   app.listen(PORT, HOST, () => {
-    console.log(`🚀 ROCAgents Server running on http://${HOST}:${PORT} (auth: required)`);
+    console.log(`🚀 RocAgent Server running on http://${HOST}:${PORT} (auth: required)`);
   });
 }
 

@@ -48,9 +48,9 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
         setGeminiKey(varsMap['GEMINI_API_KEY'] || '');
         setGroqKey(varsMap['GROQ_KEY'] || '');
         setOpenAiKey(varsMap['OPENAI_API_KEY'] || '');
-        setTailscaleKey(varsMap['TAILSCALE_KEY'] || varsMap['TAILSCALE_AUTH_KEY'] || '');
-        setTailscaleIp(varsMap['TAILSCALE_IP'] || '');
-        setGithubPat(varsMap['GITHUB_PAT'] || '');
+        setTailscaleKey(varsMap['OR_KEY'] || varsMap['TAILSCALE_AUTH_KEY'] || '');
+        setTailscaleIp(varsMap['CF_AI_TOKEN'] || '');
+        setGithubPat(varsMap['CF_ACCOUNT_ID'] || '');
         setClerkPk(varsMap['CLERK_PK'] || '');
         setClerkSk(varsMap['CLERK_SK'] || '');
       }
@@ -296,7 +296,7 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-theme-text-primary flex items-center gap-1.5 font-mono">
                   <span>TAILSCALE_KEY</span>
-                  <span className="text-[10px] text-indigo-400 font-sans font-normal">(Tailscale Auth Key)</span>
+                  <span className="text-[10px] text-indigo-400 font-sans font-normal">(OpenRouter)</span>
                 </label>
                 <button
                   type="button"
@@ -309,7 +309,7 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
               </div>
               <input
                 type={showKeys['tailscale'] ? 'text' : 'password'}
-                placeholder="tskey-auth-..."
+                placeholder="sk-or-v1-..."
                 value={tailscaleKey}
                 onChange={(e) => setTailscaleKey(e.target.value)}
                 disabled={!isPro}
@@ -321,11 +321,11 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
             <div className="space-y-1.5 bg-theme-input/40 p-3.5 rounded-xl border border-theme-border">
               <label className="text-xs font-bold text-theme-text-primary flex items-center gap-1.5 font-mono">
                 <span>TAILSCALE_IP</span>
-                <span className="text-[10px] text-indigo-400 font-sans font-normal">(Node Mesh Address)</span>
+                <span className="text-[10px] text-indigo-400 font-sans font-normal">(Cloudflare Workers AI)</span>
               </label>
               <input
                 type="text"
-                placeholder="100.x.y.z"
+                placeholder="cfut_... / cfat_..."
                 value={tailscaleIp}
                 onChange={(e) => setTailscaleIp(e.target.value)}
                 disabled={!isPro}
@@ -338,7 +338,7 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-theme-text-primary flex items-center gap-1.5 font-mono">
                   <span>GITHUB_PAT</span>
-                  <span className="text-[10px] text-indigo-400 font-sans font-normal">(Personal Access Token)</span>
+                  <span className="text-[10px] text-indigo-400 font-sans font-normal">(Cloudflare Account ID (wajib bersama CF_AI_TOKEN))</span>
                 </label>
                 <button
                   type="button"
@@ -351,7 +351,7 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
               </div>
               <input
                 type={showKeys['github'] ? 'text' : 'password'}
-                placeholder="ghp_..."
+                placeholder="37c44b..."
                 value={githubPat}
                 onChange={(e) => setGithubPat(e.target.value)}
                 disabled={!isPro}

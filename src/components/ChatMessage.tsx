@@ -462,7 +462,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
         <div className={`flex items-center justify-between w-full mb-1 px-1 select-none`}>
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-bold text-theme-text-muted uppercase tracking-widest opacity-80 group-hover:opacity-100 transition-opacity">
-              {isUser ? 'You' : 'Codex AI'}
+              {isUser ? 'You' : 'RoC AI'}
             </span>
             {!isUser && (
               <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />

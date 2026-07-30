@@ -32,7 +32,7 @@ export function Header(p: HeaderProps) {
         <div className="flex items-center gap-2">
           <h2 className="font-mono uppercase tracking-wider text-theme-text-primary text-xs font-bold flex items-center gap-2">
             <Layout size={15} className="text-indigo-400" />
-            <span className="hidden sm:inline text-slate-100 font-extrabold">ROCAgents Codex</span>
+            <span className="hidden sm:inline text-slate-100 font-extrabold">RocAgent</span>
           </h2>
           {activeModel && (
             <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 text-xs font-mono select-none">

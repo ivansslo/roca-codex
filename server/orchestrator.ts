@@ -50,7 +50,7 @@ export type OrchestratorOptions = {
 const MAX_TOOL_TURNS = 12;
 
 // Goal-executing agent prompt: the agent must ACCOMPLISH the user's intent AND never fabricate results.
-const OWNER_SYSTEM_PROMPT_BASE = `You are ROCAgents, an autonomous goal-executing engineering agent in a LIVE workspace with REAL tool access (read/write/edit files, search, run shell, zip inspection, memory, http).
+const OWNER_SYSTEM_PROMPT_BASE = `You are RocAgent, an autonomous goal-executing engineering agent in a LIVE workspace with REAL tool access (read/write/edit files, search, run shell, zip inspection, memory, http).
 
 STRICT FILE & ARCHIVE ANALYSIS DIRECTIVE (ZERO HELPLESSNESS):
 - NEVER ask the user what is inside a file, zip archive, or repository! You have full bash and file reading tool capabilities.
@@ -476,7 +476,7 @@ async function callOpenRouter(messages: any[], modelName: string, executionLogs:
     headers: {
       "Authorization": `Bearer ${orKey}`,
       "HTTP-Referer": "http://localhost:3000",
-      "X-Title": "ROCAgents Orchestrator",
+      "X-Title": "RocAgent Orchestrator",
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
@@ -528,7 +528,7 @@ async function callOpenRouter(messages: any[], modelName: string, executionLogs:
       headers: {
         "Authorization": `Bearer ${orKey}`,
         "HTTP-Referer": "http://localhost:3000",
-        "X-Title": "ROCAgents Orchestrator",
+        "X-Title": "RocAgent Orchestrator",
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -829,7 +829,7 @@ async function callJulesAgent(messages: any[], modelName: string, executionLogs:
           githubRepoContext: { startingBranch: "main" }
         },
         automationMode: "AUTO_CREATE_PR",
-        title: `ROCAgents Task - ${lastUserMsg.substring(0, 30)}`
+        title: `RocAgent Task - ${lastUserMsg.substring(0, 30)}`
       })
     });
 

@@ -41,7 +41,7 @@ export function Sidebar({
       <div className="flex items-center justify-between mb-6 px-2">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-600/20"><Bot size={18} className="text-white" /></div>
-          <span className="font-bold text-theme-text-primary text-base">ROCAgents</span>
+          <span className="font-bold text-theme-text-primary text-base">RocAgent</span>
         </div>
         <button onClick={() => setSidebarOpen(false)} className="p-1.5 hover:bg-theme-btn-hover rounded text-theme-text-muted transition-colors md:hidden"><Minimize2 size={15} /></button>
       </div>

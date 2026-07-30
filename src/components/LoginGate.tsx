@@ -65,7 +65,7 @@ export function LoginGate({ children }: LoginGateProps) {
         <form onSubmit={handleLogin} className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl">
           <div className="flex flex-col items-center mb-5">
             <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-600/20 mb-3"><Bot size={24} className="text-white" /></div>
-            <h1 className="text-lg font-bold text-slate-100">ROCAgents</h1>
+            <h1 className="text-lg font-bold text-slate-100">RocAgent</h1>
             <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Lock size={12} /> Workspace dilindungi password</p>
           </div>
           <input

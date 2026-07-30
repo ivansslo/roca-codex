@@ -7,6 +7,8 @@ export interface ProviderStatus {
   keyName: string;
   configured: boolean;
   status: 'valid' | 'invalid' | 'missing';
+  /** Sebab kegagalan dari server: kuota habis, kunci ditolak, timeout. */
+  detail?: string;
   message: string;
   latencyMs?: number;
 }
@@ -150,7 +152,7 @@ export const AiProviderValidator: React.FC<AiProviderValidatorProps> = ({
         {loading ? (
           <div className="col-span-full py-8 text-center text-xs text-theme-text-muted space-y-2">
             <RefreshCw size={20} className="animate-spin mx-auto text-indigo-500" />
-            <p>Pinging Gemini, Groq, OpenAI REST endpoints & measuring response latency...</p>
+            <p>Memanggil endpoint tiap penyedia dan mengukur latensi sebenarnya.</p>
           </div>
         ) : (
           providers.map((p) => {
@@ -207,6 +209,12 @@ export const AiProviderValidator: React.FC<AiProviderValidatorProps> = ({
                     {p.message}
                   </p>
                 </div>
+
+                {p.detail && (
+                  <p className="text-[10px] font-mono text-amber-400/90 pb-1">
+                    {p.detail}
+                  </p>
+                )}
 
                 <div className="flex items-center justify-between text-[10px] font-mono text-theme-text-muted pt-1 border-t border-theme-border/50">
                   <span>
