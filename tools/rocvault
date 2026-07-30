@@ -251,13 +251,51 @@ cmd_edit() {
 }
 
 cmd_run() {
-  local enc="${1:-}"; shift || true
+  # Terima SATU ATAU LEBIH vault sebelum '--'. Ini membuat pola glob bekerja
+  # sebagaimana diharapkan:
+  #     rocvault run ~/.config/rocagent/*.vault -- npm start
+  # Sebelumnya hanya argumen pertama dibaca sebagai vault dan sisanya dianggap
+  # perintah, sehingga shell mencoba MENJALANKAN cloud.env.vault dan gagal
+  # dengan "Permission denied" (kode 126).
+  local -a vaults=()
+  while [ $# -gt 0 ] && [ "$1" != "--" ]; do
+    vaults+=("$1"); shift
+  done
   [ "${1:-}" = "--" ] && shift
-  [ -n "$enc" ] && [ $# -ge 1 ] || die "Pakai: rocvault run .env.vault -- <perintah>
+
+  [ ${#vaults[@]} -ge 1 ] || die "Pakai: rocvault run <vault...> -- <perintah>
   Contoh (jalankan DARI direktori proyek):
-    cd ~/RocAgent && rocvault run ~/.config/rocagent/app.env.vault -- npm start"
+    cd ~/RocAgent && rocvault run ~/.config/rocagent/app.env.vault -- npm start
+    cd ~/RocAgent && rocvault run ~/.config/rocagent/*.vault -- npm start"
+
+  # Periksa berkas DULU. Kalau '--' terlupa, argumen perintah masuk ke daftar
+  # vault, dan menyebut "tidak ada perintah" akan menyesatkan — masalah
+  # sebenarnya adalah pemisah yang hilang.
+  local v
+  for v in "${vaults[@]}"; do
+    [ -f "$v" ] || die "Bukan berkas vault: $v
+  Sepertinya pemisah '--' terlewat. Semua argumen sebelum '--' dibaca sebagai
+  berkas vault, dan yang sesudahnya sebagai perintah:
+    rocvault run <vault...> -- <perintah>
+  Contoh:
+    rocvault run ~/.config/rocagent/app.env.vault -- npm start"
+  done
+
+  [ $# -ge 1 ] || die "Tidak ada perintah setelah '--'.
+  Vault yang akan dimuat: ${vaults[*]}
+  Tambahkan perintahnya, mis:  -- npm start"
+
   local pass; pass=$(read_pass "Passphrase: ")
-  local plain; plain=$(vault_open "$enc" "$pass")
+
+  # Beberapa vault digabung. Vault berikutnya menimpa nama yang sama —
+  # urutan argumen menentukan yang menang.
+  local plain=""
+  for v in "${vaults[@]}"; do
+    local part
+    part=$(vault_open "$v" "$pass") || die "Gagal membuka $v (passphrase berbeda?)"
+    plain="${plain}${part}"$'\n'
+  done
+  [ ${#vaults[@]} -gt 1 ] && ok "Menggabung ${#vaults[@]} vault"
   # Env diteruskan lewat memori proses, tidak pernah ditulis ke disk.
   local -a envs=()
   local -a aneh=()
@@ -284,7 +322,7 @@ cmd_run() {
   if [ ${#aneh[@]} -gt 0 ]; then
     warn "${#aneh[@]} baris mencurigakan di vault:"
     printf '    %s\n' "${aneh[@]}" >&2
-    printf '    Perbaiki dengan: rocvault edit %s\n\n' "$enc" >&2
+    printf '    Perbaiki dengan: rocvault edit %s\n\n' "${vaults[0]}" >&2
   fi
 
   ok "Memuat ${#envs[@]} variabel ke proses anak"
@@ -301,7 +339,7 @@ cmd_run() {
     warn "Perintah keluar dengan kode $rc (dijalankan di: $PWD)"
     case "$1" in
       npm|npx|node|bun|yarn|pnpm)
-        [ -f package.json ] || printf '    Tidak ada package.json di sini. Untuk RocAgent:\n      cd ~/RocAgent && rocvault run %s -- %s\n' "$enc" "$*" >&2 ;;
+        [ -f package.json ] || printf '    Tidak ada package.json di sini. Untuk RocAgent:\n      cd ~/RocAgent && rocvault run %s -- %s\n' "${vaults[0]}" "$*" >&2 ;;
     esac
   fi
   return "$rc"

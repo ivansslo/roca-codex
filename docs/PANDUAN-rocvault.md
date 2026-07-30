@@ -65,6 +65,7 @@ rocvault check  app.env.vault                   # uji integritas, isi tidak tamp
 rocvault edit   app.env.vault                   # edit lalu enkripsi ulang otomatis
 rocvault rotate app.env.vault                   # ganti passphrase
 rocvault run    app.env.vault -- npm start      # jalankan tanpa menulis plaintext
+rocvault run    *.vault -- npm start           # gabung beberapa vault sekaligus
                                                 # (dari dalam direktori proyek)
 ```
 
@@ -72,6 +73,17 @@ rocvault run    app.env.vault -- npm start      # jalankan tanpa menulis plainte
 pernah menyentuh disk**.
 
 ---
+
+## Menguji agent
+
+```bash
+cd ~/RocAgent
+rocvault run ~/.config/rocagent/app.env.vault -- bash tools/test-agent.sh
+```
+
+Memeriksa berlapis dan berhenti di lapisan pertama yang gagal: env termuat,
+kunci diterima penyedia, kunci boleh memanggil endpoint chat, server hidup,
+lalu satu pesan sungguhan ke `/api/chat`.
 
 ## Alur kerja harian
 
