@@ -321,7 +321,7 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
             <div className="space-y-1.5 bg-theme-input/40 p-3.5 rounded-xl border border-theme-border">
               <label className="text-xs font-bold text-theme-text-primary flex items-center gap-1.5 font-mono">
                 <span>TAILSCALE_IP</span>
-                <span className="text-[10px] text-indigo-400 font-sans font-normal">(Cloudflare Workers AI)</span>
+                <span className="text-[10px] text-indigo-400 font-sans font-normal">(Cloudflare — token "Workers AI")</span>
               </label>
               <input
                 type="text"
@@ -338,7 +338,7 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-theme-text-primary flex items-center gap-1.5 font-mono">
                   <span>GITHUB_PAT</span>
-                  <span className="text-[10px] text-indigo-400 font-sans font-normal">(Cloudflare Account ID (wajib bersama CF_AI_TOKEN))</span>
+                  <span className="text-[10px] text-indigo-400 font-sans font-normal">(Cloudflare Account ID — wajib, tanpa ini auth gagal)</span>
                 </label>
                 <button
                   type="button"

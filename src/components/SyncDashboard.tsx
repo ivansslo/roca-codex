@@ -64,7 +64,7 @@ export function SyncDashboard({ userEmail = '', userGithub = '' }: { userEmail?:
 
         {/* GitHub */}
         <Card title="GitHub" icon={GitBranch} ok={github?.hasUpdates === false}>
-          <Row k="Repo Utama" v={github?.repo || 'ivansslo/roca-codex'} />
+          <Row k="Repo Utama" v={github?.repo || 'ivansslo/RocAgent'} />
           <Row k="Local Head" v={github?.localHead || '—'} />
           <Row k="Remote Head" v={github?.remoteHead || '—'} />
           <div className="mt-2">
@@ -77,8 +77,7 @@ export function SyncDashboard({ userEmail = '', userGithub = '' }: { userEmail?:
         {/* Account */}
         <Card title="Akun / Developer" icon={CheckCircle2} ok={!!userEmail || !!userGithub}>
           <Row k="Developer" v="ivansslo" />
-          <Row k="Source Core" v="ivansslo/roca-codex" />
-          <Row k="Source Engine" v="ivansslo/rocagents" />
+                    <Row k="Repositori" v="ivansslo/RocAgent" />
         </Card>
       </div>
 

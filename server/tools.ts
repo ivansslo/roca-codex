@@ -768,9 +768,9 @@ export const toolImplementations: Record<string, Function> = {
       return { status: r.ok ? "success" : "error", action, stdout: r.stdout, stderr: r.stderr };
     }
     // action === 'sync' : add + commit + push
-    const msg = args.message || `chore: update via ROCAgents ${new Date().toISOString()}`;
+    const msg = args.message || `chore: update via RocAgent ${new Date().toISOString()}`;
     const add = await run("git add -A");
-    const commit = await run(`git -c user.name="ROCAgents" -c user.email="agent@rocagents.local" commit -m ${JSON.stringify(msg)}`);
+    const commit = await run(`git -c user.name="RocAgent" -c user.email="agent@rocagent.local" commit -m ${JSON.stringify(msg)}`);
     let pushCmd = `git push origin ${branch}`;
     if (token) {
       const origin = await run("git remote get-url origin");

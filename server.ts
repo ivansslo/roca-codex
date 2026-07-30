@@ -635,10 +635,10 @@ async function startServer() {
       const home = process.env.HOME || "/data/data/com.termux/files/home";
       const sshDir = path.join(home, ".ssh");
       if (!fs.existsSync(sshDir)) fs.mkdirSync(sshDir, { recursive: true });
-      const keyPath = path.join(sshDir, "rocagents_key");
+      const keyPath = path.join(sshDir, "rocagent_key");
       try { fs.unlinkSync(keyPath); fs.unlinkSync(keyPath + ".pub"); } catch {}
       try {
-        await execAsync(`ssh-keygen -t ed25519 -f ${JSON.stringify(keyPath)} -N "" -C "rocagents"`, { timeout: 15000 });
+        await execAsync(`ssh-keygen -t ed25519 -f ${JSON.stringify(keyPath)} -N "" -C "rocagent"`, { timeout: 15000 });
       } catch (e: any) {
         return res.status(500).json({ error: "ssh-keygen gagal. Jalankan sekali: pkg install openssh. (" + e.message + ")" });
       }
@@ -677,7 +677,7 @@ async function startServer() {
       const m = (stdout || "").trim().match(/github\.com[:/]([^/]+)\/([^/.]+)/);
       if (m) return `${m[1]}/${m[2]}`;
     } catch {}
-    return "ivansslo/roca-codex";
+    return "ivansslo/RocAgent";
   }
 
   app.get("/api/github/updates", async (req, res) => {
@@ -735,7 +735,7 @@ async function startServer() {
       const repo = await resolveGitHubRepo(execAsync);
       let branch = "main";
       try { const { stdout } = await execAsync("git rev-parse --abbrev-ref HEAD", { timeout: 3000 }); branch = stdout.trim() || "main"; } catch (_) {}
-      await execAsync('git config user.name "ROCAgents" && git config user.email "agent@rocagents.local"');
+      await execAsync('git config user.name "RocAgent" && git config user.email "agent@rocagent.local"');
       await execAsync('git add . && git commit -m "chore: update via ROCAgents" || true');
       const pushUrl = `https://${token}@github.com/${repo}.git`;
       const { stdout, stderr } = await execAsync(`git push ${pushUrl} ${branch}`, { timeout: 45000 });
