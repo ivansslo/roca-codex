@@ -5,16 +5,13 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Cpu, 
-  Code, 
-  ShieldAlert, 
-  CheckCircle2, 
-  Search, 
-  Sparkles, 
-  ArrowRight,
+import {
+  Search,
+  Hammer,
+  ShieldAlert,
+  CheckCircle2,
+  Sparkles,
   Database,
-  Lock
 } from 'lucide-react';
 import { AgentRole, AgentStep } from '../types';
 
@@ -22,15 +19,13 @@ interface OrchestraVisualizerProps {
   activeStepIndex: number;
   steps: AgentStep[];
   status: 'idle' | 'running' | 'completed' | 'failed';
-  useSearch: boolean;
-  useThinking: boolean;
 }
 
 interface AgentNode {
   id: AgentRole;
   name: string;
   title: string;
-  model: string;
+  badge: string;
   avatar: string;
   icon: any;
   description: string;
@@ -39,44 +34,44 @@ interface AgentNode {
 
 const AGENTS: AgentNode[] = [
   {
-    id: 'architect',
-    name: 'Chief_Architect',
-    title: 'Enterprise Software Architect',
-    model: 'gemini-2.5-pro',
-    avatar: '🤖',
-    icon: Cpu,
-    description: 'Designs secure system structures, multi-module blueprints, and data schema relationships.',
-    capabilities: ['Reasoning (ThinkingLevel.HIGH)', 'Deep Web Grounding', 'Multi-file Structural Design']
+    id: 'scout',
+    name: 'Scout',
+    title: 'Fast Recon / Context Catcher',
+    badge: 'SCOUT',
+    avatar: '🔎',
+    icon: Search,
+    description: 'Read-only recon: catches project/file context fast (list, read, search, git status/log) to ground the pipeline in real facts before anything is built.',
+    capabilities: ['list_project_files', 'read_project_file', 'search_codebase', 'Read-only shell']
   },
   {
-    id: 'developer',
-    name: 'Lead_Developer',
-    title: 'Senior Software Engineer',
-    model: 'gemini-2.5-flash',
-    avatar: '💻',
-    icon: Code,
-    description: 'Generates robust, clean source files based on the blueprints with modern language patterns.',
-    capabilities: ['Dynamic JSON Generation', 'Atomic Modularity', 'Type Safety Annotations']
+    id: 'builder',
+    name: 'Builder/Modder',
+    title: 'Implementation & Execution',
+    badge: 'BUILD',
+    avatar: '🛠️',
+    icon: Hammer,
+    description: 'Takes initiative and executes for real: writes/edits/patches files, runs builds/installs, mods the project — no clarifying questions, decisive action.',
+    capabilities: ['write_project_file', 'edit_project_file', 'run_bash_command', 'terminal_manager']
   },
   {
-    id: 'pentester',
-    name: 'Security_Pentester',
-    title: 'Certified White-Hat Pentester',
-    model: 'gemini-2.5-flash',
+    id: 'breaker',
+    name: 'Breaker',
+    title: 'Security / Break-Test',
+    badge: 'BREAK',
     avatar: '🕵️',
     icon: ShieldAlert,
-    description: 'Performs static code vulnerability audits (SAST) looking for injection flaws and vulnerabilities.',
-    capabilities: ['OWASP Top 10 Scan', 'Payload Mutation Assessment', 'Code Hardening Suggestions']
+    description: 'Tries to break what Builder just produced — injection, auth bypass, secret exposure, path traversal, SSRF — validated with real tool checks, not guesses.',
+    capabilities: ['search_codebase', 'run_bash_command', 'read_project_file', 'OWASP-style review']
   },
   {
-    id: 'qa',
-    name: 'QA_Supervisor',
-    title: 'Validation & Quality Director',
-    model: 'gemini-2.0-flash',
-    avatar: '🚀',
+    id: 'closer',
+    name: 'Closer',
+    title: 'Final Verdict',
+    badge: 'CLOSE',
+    avatar: '✅',
     icon: CheckCircle2,
-    description: 'Designs test cases, checks edge cases, monitors coverage, and generates stable production builds.',
-    capabilities: ['Unit Test Suite Synthesis', 'Coverage Verification', 'SemVer Release tagging']
+    description: 'Reads all three prior reports and makes the fast final call: PASS / PASS WITH NOTES / FAIL, with concrete next steps if anything remains.',
+    capabilities: ['Verdict synthesis', 'Spot-check tool calls', 'Risk summary']
   }
 ];
 
@@ -84,8 +79,6 @@ export default function OrchestraVisualizer({
   activeStepIndex,
   steps,
   status,
-  useSearch,
-  useThinking
 }: OrchestraVisualizerProps) {
   const [selectedAgent, setSelectedAgent] = useState<AgentNode | null>(AGENTS[0]);
 
@@ -108,27 +101,15 @@ export default function OrchestraVisualizer({
         <div>
           <h2 className="text-lg font-medium text-slate-100 flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-cyan-400" />
-            Autonomous Multi-Agent Orchestra (ROC Ecosystem)
+            Agent Multi — Scout → Builder → Breaker → Closer
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Dynamic agent selector coordination pipeline for <code className="text-indigo-300 font-mono">roc-webui.zip</code> & <code className="text-indigo-300 font-mono">roc-otoweb.zip</code>.
+            Fast autonomous pipeline: recon, real implementation, break-test, final verdict.
           </p>
         </div>
-        
-        {/* Indicators */}
+
+        {/* Status indicator */}
         <div className="flex items-center gap-3">
-          {useThinking && (
-            <div className="px-2.5 py-1 rounded-full bg-cyan-950/80 border border-cyan-800/60 text-cyan-400 text-[10px] font-mono flex items-center gap-1">
-              <Cpu className="w-3.5 h-3.5 animate-pulse" />
-              THINKING: HIGH
-            </div>
-          )}
-          {useSearch && (
-            <div className="px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-800/60 text-emerald-400 text-[10px] font-mono flex items-center gap-1">
-              <Search className="w-3.5 h-3.5" />
-              GROUNDING ON
-            </div>
-          )}
           <div className={`px-2.5 py-1 rounded-full text-[10px] font-mono flex items-center gap-1.5 ${
             status === 'running' ? 'bg-amber-950 border border-amber-800 text-amber-400' :
             status === 'completed' ? 'bg-emerald-950 border border-emerald-800 text-emerald-400' :
@@ -153,29 +134,29 @@ export default function OrchestraVisualizer({
           <div className="relative w-full max-w-[480px] aspect-[4/3] flex items-center justify-center">
             {/* Connection Paths/Lines */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ filter: 'drop-shadow(0 0 8px rgba(34, 211, 238, 0.2))' }}>
-              <line 
-                x1="25%" y1="20%" x2="75%" y2="20%" 
+              <line
+                x1="25%" y1="20%" x2="75%" y2="20%"
                 className={`stroke-2 transition-all duration-700 ${
-                  getAgentState('developer') !== 'idle' ? 'stroke-cyan-500' : 'stroke-slate-800'
+                  getAgentState('builder') !== 'idle' ? 'stroke-cyan-500' : 'stroke-slate-800'
                 }`}
                 strokeDasharray={status === 'running' && activeStepIndex === 1 ? '5 5' : 'none'}
               />
-              <line 
-                x1="75%" y1="20%" x2="75%" y2="80%" 
+              <line
+                x1="75%" y1="20%" x2="75%" y2="80%"
                 className={`stroke-2 transition-all duration-700 ${
-                  getAgentState('pentester') !== 'idle' ? 'stroke-violet-500' : 'stroke-slate-800'
+                  getAgentState('breaker') !== 'idle' ? 'stroke-violet-500' : 'stroke-slate-800'
                 }`}
                 strokeDasharray={status === 'running' && activeStepIndex === 2 ? '5 5' : 'none'}
               />
-              <line 
-                x1="75%" y1="80%" x2="25%" y2="80%" 
+              <line
+                x1="75%" y1="80%" x2="25%" y2="80%"
                 className={`stroke-2 transition-all duration-700 ${
-                  getAgentState('qa') !== 'idle' ? 'stroke-emerald-500' : 'stroke-slate-800'
+                  getAgentState('closer') !== 'idle' ? 'stroke-emerald-500' : 'stroke-slate-800'
                 }`}
                 strokeDasharray={status === 'running' && activeStepIndex === 3 ? '5 5' : 'none'}
               />
-              <line 
-                x1="25%" y1="80%" x2="25%" y2="20%" 
+              <line
+                x1="25%" y1="80%" x2="25%" y2="20%"
                 className={`stroke-2 transition-all duration-700 ${
                   status === 'completed' ? 'stroke-teal-500' : 'stroke-slate-800'
                 }`}
@@ -183,53 +164,53 @@ export default function OrchestraVisualizer({
               />
             </svg>
 
-            {/* Agent 1: Chief Architect */}
+            {/* Agent 1: Scout */}
             <div className="absolute top-[5%] left-[10%] -translate-x-1/2 -translate-y-1/2">
-              <NodeButton 
-                agent={AGENTS[0]} 
-                state={getAgentState('architect')} 
+              <NodeButton
+                agent={AGENTS[0]}
+                state={getAgentState('scout')}
                 isActive={activeStepIndex === 0 && status === 'running'}
-                isSelected={selectedAgent?.id === 'architect'}
+                isSelected={selectedAgent?.id === 'scout'}
                 onClick={() => setSelectedAgent(AGENTS[0])}
               />
             </div>
 
-            {/* Agent 2: Lead Developer */}
+            {/* Agent 2: Builder/Modder */}
             <div className="absolute top-[5%] left-[90%] -translate-x-1/2 -translate-y-1/2">
-              <NodeButton 
-                agent={AGENTS[1]} 
-                state={getAgentState('developer')} 
+              <NodeButton
+                agent={AGENTS[1]}
+                state={getAgentState('builder')}
                 isActive={activeStepIndex === 1 && status === 'running'}
-                isSelected={selectedAgent?.id === 'developer'}
+                isSelected={selectedAgent?.id === 'builder'}
                 onClick={() => setSelectedAgent(AGENTS[1])}
               />
             </div>
 
-            {/* Agent 3: Security Pentester */}
+            {/* Agent 3: Breaker */}
             <div className="absolute top-[95%] left-[90%] -translate-x-1/2 -translate-y-1/2">
-              <NodeButton 
-                agent={AGENTS[2]} 
-                state={getAgentState('pentester')} 
+              <NodeButton
+                agent={AGENTS[2]}
+                state={getAgentState('breaker')}
                 isActive={activeStepIndex === 2 && status === 'running'}
-                isSelected={selectedAgent?.id === 'pentester'}
+                isSelected={selectedAgent?.id === 'breaker'}
                 onClick={() => setSelectedAgent(AGENTS[2])}
               />
             </div>
 
-            {/* Agent 4: QA Supervisor */}
+            {/* Agent 4: Closer */}
             <div className="absolute top-[95%] left-[10%] -translate-x-1/2 -translate-y-1/2">
-              <NodeButton 
-                agent={AGENTS[3]} 
-                state={getAgentState('qa')} 
+              <NodeButton
+                agent={AGENTS[3]}
+                state={getAgentState('closer')}
                 isActive={activeStepIndex === 3 && status === 'running'}
-                isSelected={selectedAgent?.id === 'qa'}
+                isSelected={selectedAgent?.id === 'closer'}
                 onClick={() => setSelectedAgent(AGENTS[3])}
               />
             </div>
 
             {/* Center Status Hub */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center">
-              <motion.div 
+              <motion.div
                 className="w-16 h-16 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center shadow-lg relative"
                 animate={status === 'running' ? { rotate: 360 } : {}}
                 transition={status === 'running' ? { repeat: Infinity, duration: 20, ease: 'linear' } : {}}
@@ -266,23 +247,12 @@ export default function OrchestraVisualizer({
 
                 <div className="border-t border-slate-800/80 pt-3 space-y-3">
                   <div>
-                    <span className="text-[10px] text-slate-500 uppercase block font-mono">Cognitive Engine</span>
-                    <span className="text-xs text-slate-300 font-mono flex items-center gap-1 mt-0.5">
-                      <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                      {(() => {
-                        const matchingStep = steps.find(s => s.agentRole === selectedAgent.id);
-                        return matchingStep?.actualModel || selectedAgent.model;
-                      })()}
-                    </span>
-                  </div>
-
-                  <div>
                     <span className="text-[10px] text-slate-500 uppercase block font-mono">Role Description</span>
                     <p className="text-xs text-slate-300 leading-relaxed mt-0.5">{selectedAgent.description}</p>
                   </div>
 
                   <div>
-                    <span className="text-[10px] text-slate-500 uppercase block font-mono">Specialized Tools & Skills</span>
+                    <span className="text-[10px] text-slate-500 uppercase block font-mono">Tools This Role May Use</span>
                     <div className="flex flex-wrap gap-1.5 mt-1.5">
                       {selectedAgent.capabilities.map((cap, idx) => (
                         <span key={idx} className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700/50 text-[10px] text-slate-300 font-mono flex items-center gap-1">
@@ -292,6 +262,17 @@ export default function OrchestraVisualizer({
                       ))}
                     </div>
                   </div>
+
+                  {(() => {
+                    const matchingStep = steps.find(s => s.agentRole === selectedAgent.id);
+                    if (!matchingStep?.thoughts) return null;
+                    return (
+                      <div>
+                        <span className="text-[10px] text-slate-500 uppercase block font-mono">Report</span>
+                        <p className="text-xs text-slate-300 leading-relaxed mt-0.5 whitespace-pre-wrap max-h-40 overflow-y-auto">{matchingStep.thoughts}</p>
+                      </div>
+                    );
+                  })()}
                 </div>
               </motion.div>
             )}
@@ -335,7 +316,7 @@ function NodeButton({ agent, state, isActive, isSelected, onClick }: NodeButtonP
       }`}
     >
       <span className="absolute -top-6 text-[9px] font-mono font-medium px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300 uppercase tracking-wider group-hover:text-cyan-400 transition-colors">
-        {agent.name.split('_')[1]}
+        {agent.badge}
       </span>
 
       {isActive && (

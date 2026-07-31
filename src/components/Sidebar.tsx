@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Bot, Minimize2, Plus, Sparkles, MessageSquare, Settings, Check, Edit2, Trash2, HardDrive, MoreHorizontal } from 'lucide-react';
+import { Bot, Minimize2, Plus, Sparkles, MessageSquare, Settings, Check, Edit2, Trash2, HardDrive, MoreHorizontal, Network } from 'lucide-react';
 import { ChatSession } from '../types';
 
-export type NavTab = 'chat' | 'files' | 'sync' | 'upgrade' | 'settings';
+export type NavTab = 'chat' | 'agents' | 'files' | 'sync' | 'upgrade' | 'settings';
 
 interface SidebarProps {
   sessions: ChatSession[];
@@ -117,6 +117,9 @@ export function Sidebar({
         <button onClick={() => onNavigateTab('chat')} className={`flex items-center gap-3 w-full p-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer ${activeTab === 'chat' ? 'bg-indigo-600 text-white shadow-md' : 'text-theme-text-secondary hover:bg-theme-btn-hover'}`}>
           <MessageSquare size={15} /> Workspace Chat
           {chatMinimized && <span className="ml-auto text-[9px] font-mono font-bold bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 px-1.5 py-0.5 rounded animate-pulse">{formatTime(minimizeTimer)}</span>}
+        </button>
+        <button onClick={() => onNavigateTab('agents')} className={`flex items-center gap-3 w-full p-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer ${activeTab === 'agents' ? 'bg-indigo-600 text-white shadow-md' : 'text-theme-text-secondary hover:bg-theme-btn-hover'}`}>
+          <Network size={15} /> Agent Multi
         </button>
         <button onClick={() => onNavigateTab('settings')} className={`flex items-center gap-3 w-full p-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer ${activeTab === 'settings' ? 'bg-indigo-600 text-white shadow-md' : 'text-theme-text-secondary hover:bg-theme-btn-hover'}`}>
           <Settings size={15} /> Pengaturan

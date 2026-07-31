@@ -58,7 +58,7 @@ export interface AppSyncInfo {
   syncLogs: string[];
 }
 
-export type AgentRole = 'architect' | 'developer' | 'pentester' | 'qa';
+export type AgentRole = 'scout' | 'builder' | 'breaker' | 'closer';
 
 export interface AgentStep {
   id: string;
@@ -68,4 +68,20 @@ export interface AgentStep {
   timestamp: string;
   thoughts?: string;
   actualModel?: string;
+}
+
+/** One SSE event received from POST /api/agents/orchestra/stream. */
+export interface AgentMultiEvent {
+  type:
+    | 'run_start'
+    | 'step_start'
+    | 'step_chunk'
+    | 'step_tool_start'
+    | 'step_tool_result'
+    | 'step_done'
+    | 'step_failed'
+    | 'run_done'
+    | 'done'
+    | 'error';
+  data: any;
 }

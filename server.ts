@@ -11,6 +11,7 @@ import dns from "dns";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { runOrchestrator } from "./server/orchestrator";
+import { runAgentOrchestra } from "./server/agentOrchestra";
 import { db } from "./server/db";
 import { initScheduler } from "./server/scheduler";
 import { createAuthMiddleware } from "./server/authMiddleware";
@@ -201,6 +202,46 @@ async function startServer() {
     } catch (error: any) {
       console.error("Stream Orchestrator Error:", error);
       res.write(`event: error\ndata: ${JSON.stringify({ error: error.message || "Streaming failed" })}\n\n`);
+      res.end();
+    }
+  });
+
+  // Agent Multi — Scout -> Builder/Modder -> Breaker -> Closer pipeline (SSE).
+  // Same request/response shape as /api/chat/stream on purpose: it reuses
+  // runOrchestrator underneath (see server/agentOrchestra.ts), so it inherits
+  // auth, the shell guard, the SSRF guard and db logging without any changes
+  // to those files.
+  app.post("/api/agents/orchestra/stream", async (req, res) => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    if (typeof res.flushHeaders === "function") res.flushHeaders();
+
+    try {
+      const { messages, model, provider, persona } = req.body;
+      if (!messages || !Array.isArray(messages)) {
+        res.write(`event: error\ndata: ${JSON.stringify({ error: "Invalid messages array" })}\n\n`);
+        return res.end();
+      }
+
+      res.write(`event: run_start\ndata: ${JSON.stringify({ message: "Agent Multi pipeline starting..." })}\n\n`);
+
+      const result = await runAgentOrchestra(messages, {
+        model, provider, persona,
+        onProgress: (evt) => {
+          res.write(`event: ${evt.type}\ndata: ${JSON.stringify(evt.data)}\n\n`);
+          if (evt.type === "step_tool_start" || evt.type === "step_tool_result") {
+            broadcastToTerminal(evt.type, evt.data);
+          }
+        }
+      });
+
+      res.write(`event: done\ndata: ${JSON.stringify(result)}\n\n`);
+      res.end();
+    } catch (error: any) {
+      console.error("Agent Orchestra Stream Error:", error);
+      res.write(`event: error\ndata: ${JSON.stringify({ error: error.message || "Agent Multi streaming failed" })}\n\n`);
       res.end();
     }
   });

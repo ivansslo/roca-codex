@@ -22,6 +22,12 @@ const SelfDevelopmentHub = React.lazy(() =>
   import('./components/SelfDevelopmentHub').then(m => ({ default: m.SelfDevelopmentHub }))
 );
 
+// Agent Multi pulls in `motion/react` for the orchestra visualizer — lazy-load it
+// too, since the default tab is Chat, not Agent Multi.
+const AgentOrchestraTab = React.lazy(() =>
+  import('./components/AgentOrchestraTab').then(m => ({ default: m.AgentOrchestraTab }))
+);
+
 export default function App() {
   // ---- Layout / navigation ----
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
@@ -355,7 +361,17 @@ export default function App() {
           />
         )}
 
-        {activeTab !== 'chat' && (
+        {activeTab === 'agents' && (
+          <Suspense fallback={<div className="flex-1 flex items-center justify-center text-xs text-theme-text-muted p-6 text-center">Memuat Agent Multi…</div>}>
+            <AgentOrchestraTab
+              selectedModel={selectedModel}
+              selectedProvider={selectedProvider}
+              persona={persona}
+            />
+          </Suspense>
+        )}
+
+        {activeTab !== 'chat' && activeTab !== 'agents' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6">
             <div className="bg-slate-900/80 border border-slate-800 p-1.5 rounded-2xl flex items-center gap-1.5 overflow-x-auto shadow-lg backdrop-blur-md">
               {([['general', 'Pengaturan Umum', SettingsIcon], ['sync', 'Ecosystem Sync', RefreshCw], ['files', 'File Repository', HardDrive], ['upgrade', 'Upgrade Plan', Sparkles]] as const).map(([sec, label, Icon]) => (
