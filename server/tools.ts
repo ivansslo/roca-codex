@@ -7,13 +7,14 @@
 import fs from 'fs';
 import path from 'path';
 import { db } from './db';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import util from 'util';
 import net from 'net';
 import dns from 'dns';
 import { checkCommand, auditLine, resolveMode } from './commandGuard';
 
 const execAsync = util.promisify(exec);
+const execFileAsync = util.promisify(execFile);
 
 /**
  * Single choke point for every shell-executing tool. Returns null when the
@@ -1068,5 +1069,216 @@ export const toolImplementations: Record<string, Function> = {
     const blocked = guardShell('ssh_run', cmd);
     if (blocked) return blocked;
     return await sshExec(cmd);
+  },
+
+  // Manage Oracle Cloud Infrastructure compute instances (create/modify/destroy a VM)
+  // using the oci-cli already installed and configured on the device (~/.oci/config —
+  // never read or transmitted by RocAgent itself, oci-cli reads it directly).
+  //
+  // Design notes:
+  //  - Every call is built as an argv ARRAY and run with execFile, never a shell
+  //    string — so nothing the model puts into a parameter value (instance name,
+  //    shape, etc.) can break out via ; | & $() backticks the way it could with a
+  //    shell string. This is a stronger guarantee than run_bash_command's guard,
+  //    which has to *detect* shell metacharacters after the fact.
+  //  - The oci CLI subcommand is restricted to a fixed allowlist (OCI_ACTIONS below)
+  //    — arbitrary `oci <anything>` is not exposed, only the specific compute-instance
+  //    lifecycle operations this tool documents.
+  //  - guardShell() still runs first (on the equivalent shell-quoted command string)
+  //    purely for the shared audit log (server/commandGuard.ts auditLine) and so a
+  //    SHELL_GUARD=enforce lockdown also covers this tool, not just run_bash_command.
+  //  - `terminate` is destructive and irreversible (unless the boot volume was kept),
+  //    so it additionally requires the caller to pass confirm: true — a plain
+  //    "terminate this VM" tool call without that flag is rejected with an
+  //    explanation instead of silently deleting anything.
+  oci_vm: async (args: {
+    action: string;
+    instanceId?: string;
+    displayName?: string;
+    compartmentId?: string;
+    availabilityDomain?: string;
+    shape?: string;
+    imageId?: string;
+    subnetId?: string;
+    ocpus?: number;
+    memoryInGBs?: number;
+    bootVolumeSizeInGBs?: number;
+    sshAuthorizedKeysFile?: string;
+    vmAction?: string; // START | STOP | SOFTSTOP | RESET | SOFTRESET for action:"power"
+    confirm?: boolean;
+  }) => {
+    const action = (args.action || "").trim().toLowerCase();
+    const compartmentId = args.compartmentId || process.env.OCI_COMPARTMENT_ID || process.env.OCI_TENANCY || "";
+
+    const run = async (label: string, argv: string[]) => {
+      // Build a display-only shell string SOLELY for the shared audit log / SHELL_GUARD
+      // gate — the actual execution below uses argv directly, never this string.
+      const displayCmd = ["oci", ...argv].map(a => (/[\s"'$`]/.test(a) ? JSON.stringify(a) : a)).join(" ");
+      const blocked = guardShell(`oci_vm:${label}`, displayCmd);
+      if (blocked) return blocked;
+      try {
+        const { stdout, stderr } = await execFileAsync("oci", argv, { timeout: 60000, maxBuffer: 4 * 1024 * 1024 } as any);
+        return { status: "success", action: label, stdout, stderr };
+      } catch (err: any) {
+        return {
+          status: "error",
+          action: label,
+          message: err?.code === "ENOENT" ? "oci-cli tidak ditemukan di PATH. Pastikan oci-cli terpasang dan ~/.oci/config sudah dikonfigurasi." : (err.message || String(err)),
+          stdout: err?.stdout || "",
+          stderr: err?.stderr || "",
+        };
+      }
+    };
+
+    switch (action) {
+      case "list": {
+        if (!compartmentId) return { status: "error", message: "compartmentId diperlukan (atau set OCI_COMPARTMENT_ID di cloud.env)." };
+        return run("list", ["compute", "instance", "list", "--compartment-id", compartmentId, "--output", "table"]);
+      }
+
+      case "get": {
+        if (!args.instanceId) return { status: "error", message: "instanceId diperlukan." };
+        return run("get", ["compute", "instance", "get", "--instance-id", args.instanceId]);
+      }
+
+      case "launch": {
+        if (!compartmentId) return { status: "error", message: "compartmentId diperlukan (atau set OCI_COMPARTMENT_ID di cloud.env)." };
+        if (!args.availabilityDomain) return { status: "error", message: "availabilityDomain diperlukan (lihat: oci iam availability-domain list)." };
+        if (!args.shape) return { status: "error", message: "shape diperlukan, mis. 'VM.Standard.A1.Flex' atau 'VM.Standard.E2.1.Micro'." };
+        if (!args.imageId) return { status: "error", message: "imageId diperlukan (lihat: oci compute image list --compartment-id ...)." };
+        if (!args.subnetId) return { status: "error", message: "subnetId diperlukan (lihat: oci network subnet list --compartment-id ...)." };
+        const argv = [
+          "compute", "instance", "launch",
+          "--compartment-id", compartmentId,
+          "--availability-domain", args.availabilityDomain,
+          "--shape", args.shape,
+          "--image-id", args.imageId,
+          "--subnet-id", args.subnetId,
+          "--display-name", args.displayName || `rocagent-vm-${Date.now()}`,
+          "--wait-for-state", "RUNNING",
+        ];
+        if (args.shape.includes(".Flex")) {
+          argv.push("--shape-config", JSON.stringify({
+            ocpus: args.ocpus ?? 1,
+            memoryInGBs: args.memoryInGBs ?? 6,
+          }));
+        }
+        if (args.bootVolumeSizeInGBs) {
+          argv.push("--boot-volume-size-in-gbs", String(args.bootVolumeSizeInGBs));
+        }
+        if (args.sshAuthorizedKeysFile) {
+          argv.push("--ssh-authorized-keys-file", args.sshAuthorizedKeysFile);
+        }
+        return run("launch", argv);
+      }
+
+      case "power": {
+        if (!args.instanceId) return { status: "error", message: "instanceId diperlukan." };
+        const vmAction = (args.vmAction || "").toUpperCase();
+        const allowed = new Set(["START", "STOP", "SOFTSTOP", "RESET", "SOFTRESET"]);
+        if (!allowed.has(vmAction)) {
+          return { status: "error", message: `vmAction harus salah satu dari: ${[...allowed].join(", ")}.` };
+        }
+        return run(`power:${vmAction}`, ["compute", "instance", "action", "--instance-id", args.instanceId, "--action", vmAction, "--wait-for-state", vmAction === "STOP" || vmAction === "SOFTSTOP" ? "STOPPED" : "RUNNING"]);
+      }
+
+      case "resize": {
+        // Only meaningful for Flex shapes — fixed shapes (e.g. E2.1.Micro) cannot be
+        // resized in place and would need terminate+relaunch, which this tool does not
+        // do implicitly (that would be a silent data-loss trap).
+        if (!args.instanceId) return { status: "error", message: "instanceId diperlukan." };
+        if (args.ocpus == null && args.memoryInGBs == null) {
+          return { status: "error", message: "resize butuh ocpus dan/atau memoryInGBs (hanya berlaku untuk Flex shapes)." };
+        }
+        const shapeConfig: Record<string, number> = {};
+        if (args.ocpus != null) shapeConfig.ocpus = args.ocpus;
+        if (args.memoryInGBs != null) shapeConfig.memoryInGBs = args.memoryInGBs;
+        return run("resize", ["compute", "instance", "update", "--instance-id", args.instanceId, "--shape-config", JSON.stringify(shapeConfig), "--force"]);
+      }
+
+      case "terminate": {
+        if (!args.instanceId) return { status: "error", message: "instanceId diperlukan." };
+        if (!args.confirm) {
+          return {
+            status: "error",
+            message: "Aksi terminate bersifat destruktif dan bisa tidak bisa dibatalkan. Panggil ulang dengan confirm:true untuk melanjutkan.",
+            requiresConfirmation: true,
+          };
+        }
+        return run("terminate", ["compute", "instance", "terminate", "--instance-id", args.instanceId, "--force"]);
+      }
+
+      default:
+        return { status: "error", message: `Aksi '${args.action}' tidak dikenal. Gunakan: list, get, launch, power, resize, terminate.` };
+    }
+  },
+
+  // Drive the `rootd` CLI from https://github.com/ivansslo/rootd-fs (rootless container
+  // runtime for Termux) as an execution tool. RocAgent only ever invokes the already-
+  // installed `rootd` binary on PATH — this repository does not vendor, patch, or modify
+  // rootd-fs in any way; it is used exactly as an end user would from a terminal.
+  //
+  // Design notes (mirrors oci_vm above):
+  //  - argv array + execFile, never a shell string, so box names / image refs / extra
+  //    flags supplied by the model cannot break out via shell metacharacters.
+  //  - Subcommand is restricted to ROOTD_SUBCOMMANDS, rootd-fs's own documented surface
+  //    (see its README "Usage" table) — nothing outside that list is accepted.
+  //  - `enter` is interactive (opens a TTY shell) and cannot work through a one-shot
+  //    tool call; the tool rejects it with a hint to use `sh` (run one command) instead,
+  //    which is rootd-fs's own non-interactive equivalent.
+  //  - `rm` and `purge` are destructive (delete a box, or every box/cache/shell-hook)
+  //    and require confirm:true, same pattern as oci_vm's `terminate`.
+  //  - guardShell() still runs first for the shared audit log / SHELL_GUARD gate.
+  rootd_fs: async (args: { subcommand: string; args?: string[]; confirm?: boolean }) => {
+    const ROOTD_SUBCOMMANDS = new Set([
+      "install", "sh", "svc", "ls", "info", "rm", "rename", "default",
+      "autostart", "backup", "restore", "completion", "docker", "tailscale",
+      "ssh", "caps", "purge", "login", "logout", "logins", "presets",
+      "doctor", "prune",
+    ]);
+
+    const subcommand = (args.subcommand || "").trim().toLowerCase();
+    if (subcommand === "enter") {
+      return {
+        status: "error",
+        message: "rootd enter membuka shell interaktif (butuh TTY) dan tidak bisa dijalankan lewat satu panggilan tool. Gunakan subcommand 'sh' untuk menjalankan satu perintah non-interaktif di dalam box, mis. { subcommand: 'sh', args: ['ubuntu', '--', 'apt', 'update'] }.",
+      };
+    }
+    if (!ROOTD_SUBCOMMANDS.has(subcommand)) {
+      return {
+        status: "error",
+        message: `Subcommand '${args.subcommand}' tidak dikenal atau tidak diizinkan. Gunakan salah satu: ${[...ROOTD_SUBCOMMANDS].join(", ")}.`,
+      };
+    }
+    if ((subcommand === "rm" || subcommand === "purge") && !args.confirm) {
+      return {
+        status: "error",
+        message: `rootd ${subcommand} bersifat destruktif (${subcommand === "purge" ? "menghapus SEMUA box, cache, dan shell hook" : "menghapus box yang dipilih"}). Panggil ulang dengan confirm:true untuk melanjutkan.`,
+        requiresConfirmation: true,
+      };
+    }
+
+    const extra = Array.isArray(args.args) ? args.args.map(String) : [];
+    const argv = [subcommand, ...extra];
+
+    const displayCmd = ["rootd", ...argv].map(a => (/[\s"'$`]/.test(a) ? JSON.stringify(a) : a)).join(" ");
+    const blocked = guardShell(`rootd_fs:${subcommand}`, displayCmd);
+    if (blocked) return blocked;
+
+    try {
+      // `install` can take a while (pulling an image layer by layer over the network),
+      // everything else is expected to return quickly.
+      const timeout = subcommand === "install" || subcommand === "restore" ? 300000 : 60000;
+      const { stdout, stderr } = await execFileAsync("rootd", argv, { timeout, maxBuffer: 4 * 1024 * 1024 } as any);
+      return { status: "success", subcommand, stdout, stderr };
+    } catch (err: any) {
+      return {
+        status: "error",
+        subcommand,
+        message: err?.code === "ENOENT" ? "rootd tidak ditemukan di PATH. Pastikan rootd-fs sudah terpasang (lihat https://github.com/ivansslo/rootd-fs)." : (err.message || String(err)),
+        stdout: err?.stdout || "",
+        stderr: err?.stderr || "",
+      };
+    }
   }
 };

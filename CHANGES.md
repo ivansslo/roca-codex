@@ -3,6 +3,78 @@
 > Snapshot hasil refactor. Berisi proyek lengkap (sudah termasuk semua perubahan).
 > Tidak menyertakan: `node_modules/`, `dist/`, `.git/`, `db.json`, `sessions/`, `.env`.
 
+## 2026-07-31 — Keamanan (cookie/session-store), README/NOTICE, tool `oci_vm` + `rootd_fs`, memori lintas-sesi Cortex Agent
+
+Empat perubahan independen dalam satu sesi:
+
+**1. Fix: `commandGuard.ts` sebelumnya mengizinkan membaca cookie browser.**
+Owner bertanya apakah RocAgent bisa membaca cookie browser lokal. Diuji
+langsung ke `checkCommand()`: 5 perintah baca/salin file Cookies Chrome,
+`cookies.sqlite` Firefox, dsb, semuanya `allowed: true` — `SENSITIVE_PATH_RE`
+sebelumnya hanya menutupi kunci SSH/OCI/AWS/gh/.netrc/.git-credentials,
+tidak pernah menutupi file cookie/session-store. Ditambal: pola baru untuk
+profil Chromium (Chrome/Chromium/Edge/Brave/Opera desktop & Android
+app-private) dan Firefox (`cookies.sqlite`, `logins.json`, `key4.db`),
+`sqlite3` ditambahkan ke `READERS`. 6 test case baru ditambahkan di
+`commandGuard.test.ts` (63 → 69 kasus).
+
+**2. README: tabel "Related projects by the same author" dihapus, dipindah ke `NOTICE.md`.**
+Fungsinya tidak berubah sama sekali (rootd-fs/termuxrd/termuxrd-cloud tetap
+menjadi runtime environment RocAgent apa adanya, tidak diimpor sebagai
+library) — hanya representasinya di README yang dihapus atas permintaan
+owner. Atribusi lisensi (terutama Apache-2.0 dari roc-webui untuk desain
+pipeline "engineering") dipindah utuh ke `NOTICE.md` baru, bukan dihapus
+tanpa jejak, supaya kewajiban atribusi §4 Apache-2.0 tetap terpenuhi.
+
+**3. Tool baru: `oci_vm` dan `rootd_fs` (`server/tools.ts` + `server/db.ts`).**
+- `oci_vm` — lifecycle penuh VM Oracle Cloud (list/get/launch/power/resize/
+  terminate) lewat `oci-cli` yang sudah terpasang & terkonfigurasi di
+  device (`~/.oci/config`, tidak pernah dibaca RocAgent sendiri). Setiap
+  panggilan dibangun sebagai argv array via `execFile` (bukan shell
+  string), sehingga nilai parameter dari model tidak bisa lolos lewat
+  metakarakter shell. `terminate` butuh `confirm:true` eksplisit.
+- `rootd_fs` — menjalankan CLI `rootd` (github.com/ivansslo/rootd-fs) apa
+  adanya sebagai tool eksekusi kontainer rootless; rootd-fs sendiri **tidak
+  diubah sama sekali**. Subcommand dibatasi ke allowlist sesuai dokumentasi
+  rootd-fs sendiri; `enter` (interaktif, butuh TTY) ditolak dengan arahan
+  memakai `sh`; `rm`/`purge` (destruktif) butuh `confirm:true`.
+- Keduanya tetap lewat `guardShell()` untuk audit log bersama dan gerbang
+  `SHELL_GUARD=enforce|warn|off` yang sama dengan tool shell lain.
+- Test baru `server/__tests__/ociVmRootdFs.test.ts` (14 kasus): validasi
+  parameter wajib, penolakan aksi destruktif tanpa confirm, allowlist
+  action/subcommand, dan pembuktian bahwa panggilan valid benar-benar
+  mencapai `execFile` nyata (gagal ENOENT di sandbox ini karena `oci-cli`/
+  `rootd` memang tidak terpasang di sana — bukti eksekusi asli, bukan stub).
+
+**4. Memori lintas-sesi untuk Cortex Agent RocAgentInsight (`snowflake/06_agent_memory.sql`).**
+Owner bertanya ke RocAgentInsight langsung di `ai.snowflake.com` soal
+preferensi permanen; agent menjawab jujur bahwa ia tidak punya mekanisme
+mengingat lintas sesi. Ditambahkan nyata: tabel `GOVERNANCE.AGENT_MEMORY`
+(key/value) + 3 stored procedure (`SAVE_AGENT_MEMORY`, `GET_AGENT_MEMORY`,
+`FORGET_AGENT_MEMORY`) di-wire sebagai custom tool (`type: generic`) pada
+agent yang sama — `save_preference` / `get_preferences` / `forget_preference`.
+Karena melekat di objek agent, bukan fitur sisi RocAgent, memori yang sama
+terlihat baik dari `query_snowflake_insight` maupun dari Snowsight langsung.
+
+**Diverifikasi live, sungguhan (bukan asumsi):** dijalankan langsung ke
+akun Snowflake — tabel & 3 procedure berhasil dibuat, ownership agent
+dipindah ke `ROCAGENTINSIGHT_ADMIN` (agent sebelumnya dimiliki role lain),
+`CREATE OR REPLACE AGENT` dengan 4 tool (Cortex Analyst + 3 tool memori
+baru) berhasil. Dites 3 panggilan HTTP terpisah (setara sesi chat baru
+tiap kali): (1) "ingat preferensi X" → agent memanggil `save_preference`;
+(2) di panggilan terpisah, "preferensi apa yang kamu ingat?" → agent
+memanggil `get_preferences`, mengembalikan kedua nilai yang tersimpan;
+(3) "lupakan preferensi bahasa" → agent memanggil `forget_preference`,
+menghapus satu key sambil mempertahankan yang lain. Data uji dibersihkan;
+`AGENT_MEMORY` production kosong, siap dipakai owner.
+
+Verifikasi menyeluruh untuk #1–#3 (perubahan kode RocAgent):
+- `npx tsc --noEmit` → 0 error
+- `npx vite build` → sukses
+- `npm test` → 6 suite, 134 kasus total (69 commandGuard + 9
+  shellGuard.integration + 17 auth + 14 endpoints.integration + 14
+  ociVmRootdFs + 11 rocvault), 0 gagal, tanpa regresi pada 114 kasus lama
+
 ## 2026-07-31 — UI: perkuat branding kartu Snowflake Cortex Agent (hackathon demo)
 
 Owner sedang ikut Snowflake CoCo CLI Hackathon 2026 (Hack2Skill) dan ingin

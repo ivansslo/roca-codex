@@ -17,6 +17,7 @@ dibangun di atas Snowflake native Semantic View + Cortex Agent object.
 | Schema | `GOVERNANCE` | Semantic model & Cortex Agent |
 | Semantic View | `ANALYTICS.ROCAGENT_OPS_SEMANTIC_VIEW` | Fondasi Cortex Analyst — tabel, relasi, dimensi, metrik |
 | Cortex Agent | `GOVERNANCE.ROCAGENTINSIGHT` | Agent siap pakai, teruji live |
+| Table | `GOVERNANCE.AGENT_MEMORY` | Memori key/value lintas-sesi milik agent (lihat bagian "Memori lintas-sesi" di bawah) |
 
 Jalankan file `00` sampai `05` **berurutan** di Snowsight (atau lewat konektor
 apa pun dengan role `ACCOUNTADMIN`/`ORGADMIN` sesuai kebutuhan tiap file).
@@ -71,6 +72,41 @@ daftar tool internal yang dipakai Cortex Agent (`tools_used`) untuk transparansi
 **Diverifikasi nyata** (bukan cuma typecheck): tool ini dipanggil langsung dari
 dalam proses RocAgent dan benar-benar menerima jawaban dari Cortex Agent di
 Snowflake, termasuk jawaban jujur saat tabel `FACT_TOOL_EXECUTION` masih kosong.
+
+## Memori lintas-sesi ("Ingat preferensi saya")
+
+Sebelumnya, RocAgentInsight jujur melaporkan tidak punya cara mengingat
+preferensi owner antar sesi chat terpisah (baik dari `ai.snowflake.com`
+maupun lewat `query_snowflake_insight`) — hanya konteks dalam satu sesi
+yang berjalan yang diingat. `06_agent_memory.sql` menambah kemampuan nyata
+untuk ini:
+
+- Tabel `GOVERNANCE.AGENT_MEMORY` — satu baris per key preferensi (bukan log
+  percakapan mentah).
+- Tiga stored procedure yang di-wire sebagai *custom tool* (`type: generic`)
+  ke agent: `SAVE_AGENT_MEMORY` (upsert), `GET_AGENT_MEMORY` (baca semua
+  sebagai JSON), `FORGET_AGENT_MEMORY` (hapus satu key) — dipanggil agent
+  sendiri sebagai `save_preference` / `get_preferences` / `forget_preference`.
+- Karena tool ini melekat pada objek agent itu sendiri (bukan fitur sisi
+  RocAgent), memori yang sama terlihat baik saat dipanggil dari RocAgent
+  maupun langsung dari Snowsight/`ai.snowflake.com` — keduanya
+  mengautentikasi sebagai user Snowflake yang sama.
+
+**Diverifikasi live** (bukan cuma baca SQL): dipanggil 3x berturut-turut
+lewat HTTP request terpisah (setara sesi chat baru tiap kali) —
+`save_preference` menyimpan 2 preferensi, `get_preferences` di panggilan
+terpisah berikutnya berhasil membacanya kembali, `forget_preference`
+menghapus satu key sambil membiarkan key lainnya utuh. Data uji dibersihkan
+setelahnya; `AGENT_MEMORY` production kosong dan siap dipakai owner.
+
+Jalankan `06_agent_memory.sql` dengan role `ROCAGENTINSIGHT_ADMIN` untuk
+tabel/procedure, lalu bagian `CREATE OR REPLACE AGENT` di file yang sama
+butuh privilege `MODIFY` atas agent — kalau agent sebelumnya dibuat dengan
+`ACCOUNTADMIN` tanpa transfer ownership, jalankan dulu:
+```sql
+GRANT OWNERSHIP ON AGENT ROCAGENTINSIGHT_DB.GOVERNANCE.ROCAGENTINSIGHT
+  TO ROLE ROCAGENTINSIGHT_ADMIN COPY CURRENT GRANTS;
+```
 
 ## Troubleshooting
 
@@ -127,5 +163,6 @@ Cek berurutan (ini yang paling sering jadi penyebab, berdasarkan insiden nyata):
 - `01_foundation.sql` — role, warehouse, database, schema
 - `02_tables.sql` — tabel RAW & ANALYTICS + seed `DIM_TOOL`/`DIM_DATE`
 - `03_semantic_view.sql` — semantic view untuk Cortex Analyst
-- `04_cortex_agent.sql` — definisi Cortex Agent RocAgentInsight
+- `04_cortex_agent.sql` — definisi awal Cortex Agent RocAgentInsight (hanya tool Cortex Analyst)
 - `05_business_continuity_dr.sql` — panduan DR manual + contoh Failover Group masa depan
+- `06_agent_memory.sql` — tabel + 3 stored procedure memori key/value lintas-sesi, di-wire sebagai custom tool tambahan pada agent yang sama (superset dari `04`, jalankan setelahnya)

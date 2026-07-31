@@ -337,6 +337,43 @@ const DEFAULT_SCHEMA: DatabaseSchema = {
       }
     },
     {
+      name: "oci_vm",
+      description: "Create and manage Oracle Cloud Infrastructure (OCI) compute instances (VMs) using the oci-cli already installed and configured on this device (~/.oci/config). Use when the owner asks to launch/create a new VM, list existing VMs, check a VM's status, start/stop/reset it, resize a Flex-shape VM's OCPUs/memory, or terminate (permanently delete) one. This calls the REAL OCI API and creates/modifies/destroys REAL billable cloud resources — never claim an action succeeded without the tool's actual stdout confirming it.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: { type: "string", description: "One of: 'list' (all instances in a compartment), 'get' (one instance's details), 'launch' (create a new VM), 'power' (start/stop/reset), 'resize' (change ocpus/memory on a Flex shape), 'terminate' (permanently delete — destructive)." },
+          instanceId: { type: "string", description: "OCID of the instance. Required for get/power/resize/terminate." },
+          displayName: { type: "string", description: "Name for a new VM (launch only). Defaults to an auto-generated name." },
+          compartmentId: { type: "string", description: "OCID of the compartment. Defaults to OCI_COMPARTMENT_ID/OCI_TENANCY env if not given. Required for list/launch." },
+          availabilityDomain: { type: "string", description: "Availability domain for launch, e.g. 'abCD:AP-SINGAPORE-1-AD-1'." },
+          shape: { type: "string", description: "Instance shape for launch, e.g. 'VM.Standard.A1.Flex' or 'VM.Standard.E2.1.Micro'." },
+          imageId: { type: "string", description: "OCID of the boot image for launch." },
+          subnetId: { type: "string", description: "OCID of the subnet for launch." },
+          ocpus: { type: "number", description: "OCPU count for a Flex shape (launch or resize)." },
+          memoryInGBs: { type: "number", description: "Memory in GB for a Flex shape (launch or resize)." },
+          bootVolumeSizeInGBs: { type: "number", description: "Boot volume size in GB for launch (optional)." },
+          sshAuthorizedKeysFile: { type: "string", description: "Path to a public key file to inject for launch (optional)." },
+          vmAction: { type: "string", description: "For action:'power' — one of START, STOP, SOFTSTOP, RESET, SOFTRESET." },
+          confirm: { type: "boolean", description: "Must be true to actually perform action:'terminate' (destructive, irreversible)." }
+        },
+        required: ["action"]
+      }
+    },
+    {
+      name: "rootd_fs",
+      description: "Drive the rootd CLI (github.com/ivansslo/rootd-fs, rootless container runtime for Termux/Linux) as an execution tool: pull an OCI/Docker image, run a command inside a box, list/inspect/remove boxes, manage backups, registries, Tailscale-in-a-box, etc. RocAgent only invokes the already-installed rootd binary as an end user would — it does not modify rootd-fs itself. Use when the owner asks to run something inside an isolated container filesystem rather than directly on the host. Interactive 'enter' is not available here — use subcommand 'sh' to run one command non-interactively instead.",
+      parameters: {
+        type: "object",
+        properties: {
+          subcommand: { type: "string", description: "One of: install, sh, svc, ls, info, rm, rename, default, autostart, backup, restore, completion, docker, tailscale, ssh, caps, purge, login, logout, logins, presets, doctor, prune." },
+          args: { type: "array", items: { type: "string" }, description: "Positional/flag arguments for the subcommand, e.g. ['ubuntu', '--', 'apt', 'update'] for subcommand 'sh'." },
+          confirm: { type: "boolean", description: "Must be true to actually perform subcommand 'rm' or 'purge' (destructive)." }
+        },
+        required: ["subcommand"]
+      }
+    },
+    {
       name: "export_app_archive",
       description: "Convert app documentation markdown (roc-webui.md or roc-otoweb.md) into a downloadable .zip archive for the ecosystem apps (github.com/ivansslo/roc-webui or github.com/ivansslo/roc-otoweb).",
       parameters: {

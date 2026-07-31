@@ -75,6 +75,14 @@ Every decision is logged with the tool name, verdict, and command.
 - `http_request` refuses URLs that resolve to private, loopback or link-local
   addresses (cloud metadata `169.254.169.254`, the `100.x` tailnet, the LAN)
   and re-validates every redirect hop — SSRF protection.
+- `oci_vm` (Oracle Cloud compute instance lifecycle) and `rootd_fs` (rootless
+  container runtime — drives the already-installed `rootd` CLI, does not
+  modify it) build every invocation as an argv array via `execFile`, never a
+  shell string, so parameter values cannot break out via shell
+  metacharacters; both restrict their action/subcommand surface to a fixed
+  allowlist, and destructive operations (`oci_vm` terminate, `rootd_fs`
+  rm/purge) require an explicit `confirm:true` rather than acting on the
+  first request.
 - `self_develop_capability` *execution* is **off by default**: snippets run with
   full Node privileges, so enabling them would bypass the guard entirely.
   Opt in deliberately with `SELF_DEV_EXECUTE=true`.
@@ -346,18 +354,6 @@ protection — every role's tool calls are exactly as constrained as a normal
 chat message. See [Security model](#security-model) above for what the guard
 does and does not cover.
 
-### Related projects by the same author
-
-RocAgent runs **on top of** this infrastructure. It does not import them as
-libraries — they provide the environment, RocAgent runs inside it.
-
-| Project | Role |
-|---|---|
-| [rootd-fs](https://github.com/ivansslo/rootd-fs) | Rootless container runtime for Termux (MIT) |
-| [termuxrd](https://github.com/ivansslo/termuxrd) | Termux environment setup (MIT) |
-| [termuxrd-cloud](https://github.com/ivansslo/termuxrd-cloud) | Phone-to-cloud VM bridge over Tailscale (MIT) |
-| [roc-webui](https://github.com/ivansslo/roc-webui) | Source of the "engineering" Agent Multi pipeline's role design (Apache-2.0) |
-
 ---
 
 ## Attribution
@@ -366,3 +362,5 @@ Built by **Ivan Ssl** ([@ivansslo](https://github.com/ivansslo)).
 
 Third-party dependencies retain their own licences; see `package.json`. Those
 licences apply to those components only and grant no rights over this software.
+See [`NOTICE.md`](NOTICE.md) for the runtime environment and design
+attribution this project does not otherwise duplicate here.
