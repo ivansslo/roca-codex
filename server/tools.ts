@@ -951,19 +951,29 @@ export const toolImplementations: Record<string, Function> = {
         return { status: "error", message: `Snowflake Cortex Agent HTTP ${resp.status}: ${raw.slice(0, 500)}` };
       }
 
-      // The Agents REST API streams Server-Sent Events (event: .../data: {...}
-      // lines). Parse them here so the tool returns one clean answer instead
-      // of raw SSE frames the model would have to re-parse itself.
+      // The Agents REST API streams Server-Sent Events: "event: <type>" lines
+      // followed by "data: {...}" lines. Only response.text.delta events are
+      // accumulated for the final answer — response.text repeats the SAME
+      // text in full at the end of each content block (not new content), and
+      // response.thinking(.delta) is the model's internal reasoning, not the
+      // answer. Treating every event with a `text` field as answer content
+      // (an earlier version of this code did) produced a duplicated,
+      // thinking-polluted answer.
       let finalText = "";
       const toolsUsed: string[] = [];
       let errorMsg = "";
+      let currentEvent = "";
       for (const line of raw.split("\n")) {
+        if (line.startsWith("event:")) {
+          currentEvent = line.slice(6).trim();
+          continue;
+        }
         if (!line.startsWith("data:")) continue;
         const payload = line.slice(5).trim();
         if (!payload || payload === "[DONE]") continue;
         let data: any;
         try { data = JSON.parse(payload); } catch { continue; }
-        if (typeof data?.text === "string") finalText += data.text;
+        if (currentEvent === "response.text.delta" && typeof data?.text === "string") finalText += data.text;
         if (data?.name && !toolsUsed.includes(data.name)) toolsUsed.push(data.name);
         if (data?.message && data?.code) errorMsg = data.message;
       }

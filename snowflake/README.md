@@ -72,6 +72,36 @@ daftar tool internal yang dipakai Cortex Agent (`tools_used`) untuk transparansi
 dalam proses RocAgent dan benar-benar menerima jawaban dari Cortex Agent di
 Snowflake, termasuk jawaban jujur saat tabel `FACT_TOOL_EXECUTION` masih kosong.
 
+## Troubleshooting
+
+**"Snowflake Cortex Agent HTTP ..." atau tool gagal / model melaporkan "kesalahan konektivitas"**
+
+Cek berurutan (ini yang paling sering jadi penyebab, berdasarkan insiden nyata):
+
+1. **PAT sudah di-revoke/rotasi tapi `cloud.env` belum diperbarui.** Error dari
+   Snowflake akan berubah dari `Network policy is required` menjadi
+   `Programmatic access token is invalid` — ini konfirmasi PAT lama mati.
+   Buat PAT baru di Snowsight, update `SNOWFLAKE_PAT` di
+   `~/.config/rocagent/cloud.env`, lalu `rocvault lock` ulang dan restart
+   RocAgent.
+2. **Network Policy memblokir IP server RocAgent.** Error:
+   `Network policy is required` atau `IP address is not allowed`. Jalankan
+   `00_network_policy.sql` dengan IP publik server RocAgent Anda yang
+   sesungguhnya (bukan IP sandbox/pihak ketiga mana pun yang dipakai saat
+   setup awal).
+3. **Cek cepat dari mana pun** (tidak perlu lewat RocAgent) apakah PAT +
+   network policy sudah benar:
+   ```bash
+   curl -s -X POST \
+     "https://<account>.snowflakecomputing.com/api/v2/databases/ROCAGENTINSIGHT_DB/schemas/GOVERNANCE/agents/ROCAGENTINSIGHT:run" \
+     -H "Authorization: Bearer $SNOWFLAKE_PAT" \
+     -H "Content-Type: application/json" \
+     -H "X-Snowflake-Authorization-Token-Type: PROGRAMMATIC_ACCESS_TOKEN" \
+     -d '{"messages":[{"role":"user","content":[{"type":"text","text":"test"}]}]}'
+   ```
+   Kalau ini gagal, masalahnya murni di sisi Snowflake (token/network policy),
+   bukan di kode RocAgent.
+
 ## Yang BELUM dilakukan (butuh keputusan/aksi Anda)
 
 1. **Data operasional masih kosong.** `FACT_TOOL_EXECUTION` sengaja dibuat

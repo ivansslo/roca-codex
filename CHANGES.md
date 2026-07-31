@@ -3,6 +3,46 @@
 > Snapshot hasil refactor. Berisi proyek lengkap (sudah termasuk semua perubahan).
 > Tidak menyertakan: `node_modules/`, `dist/`, `.git/`, `db.json`, `sessions/`, `.env`.
 
+## 2026-07-31 — Fix: query_snowflake_insight mengembalikan jawaban terduplikasi
+
+Owner melaporkan Cortex Agent "tidak berjalan" — investigasi lapangan (bukan
+tebakan) menemukan DUA masalah terpisah:
+
+1. **PAT Snowflake lama sudah di-revoke** (langkah keamanan yang benar dari
+   owner) tapi belum diganti PAT baru di `cloud.env` — ini bukan bug kode,
+   dikonfirmasi dengan menguji koneksi langsung: error Snowflake berubah dari
+   `Network policy is required` (kemarin) menjadi
+   `Programmatic access token is invalid` (sekarang), sesuai perilaku token
+   yang benar-benar dicabut. Setelah PAT baru dipasang, koneksi berhasil.
+2. **Bug nyata di `query_snowflake_insight`** (server/tools.ts): parser SSE
+   mengumpulkan field `text` dari SETIAP event yang memilikinya, termasuk
+   `response.thinking(.delta)` (penalaran internal model, bukan jawaban) dan
+   `response.text` (yang me-replay ulang teks penuh yang SAMA di akhir tiap
+   content block, bukan konten baru). Hasilnya: jawaban akhir mengandung teks
+   pemikiran + jawaban terduplikasi dua kali berturut-turut.
+
+Fix: parser sekarang melacak `event:` SSE saat ini dan HANYA mengumpulkan teks
+dari event `response.text.delta` — satu-satunya event yang membawa potongan
+teks jawaban yang benar-benar baru (streaming delta), konsisten dengan cara
+`src/lib/chatStream.ts` dan `src/lib/agentOrchestraStream.ts` menangani event
+serupa di frontend.
+
+`snowflake/00_network_policy.sql` dan `snowflake/README.md` diperbarui:
+opsi Network Rules (direkomendasikan Snowflake untuk policy baru, lihat
+docs.snowflake.com/en/user-guide/network-policies) ditambahkan sebagai
+alternatif `ALLOWED_IP_LIST` legacy, plus bagian Troubleshooting yang
+mendokumentasikan kedua kegagalan di atas untuk insiden serupa di masa depan.
+
+Verifikasi di sandbox:
+- `tsc --noEmit` → EXIT 0
+- `npm test` (114 kasus) → semua lulus, nol regresi
+- `npm run build` → sukses
+- **Reproduksi & konfirmasi nyata**: dipanggil langsung dengan PAT lama (gagal,
+  `token is invalid`, mengonfirmasi dugaan) dan PAT baru (sebelum fix:
+  jawaban terduplikasi persis seperti dilaporkan owner; sesudah fix: jawaban
+  bersih, tanpa duplikasi, `tools_used` tetap mengonfirmasi
+  `rocagent_ops_analyst` + `system_execute_sql` dipanggil Cortex Agent)
+
 ## 2026-07-31 — Tool baru: query_snowflake_insight (integrasi Cortex Agent Snowflake)
 
 Menambah satu tool baru ke RocAgent yang memanggil Cortex Agent Snowflake
