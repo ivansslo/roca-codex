@@ -896,12 +896,19 @@ export const toolImplementations: Record<string, Function> = {
     }
   },
 
-  // Delegate a data-analysis question to a Snowflake Cortex Agent (e.g. the
-  // "RocAgentInsight" agent set up for operational log analysis). This is a
-  // REAL call to Snowflake's Cortex Agents REST API — it returns whatever
-  // the agent's semantic view / warehouse actually produced, never invented
-  // numbers. Reads credentials from env only (SNOWFLAKE_ACCOUNT, _USER, _PAT
-  // or _KEY); does nothing and returns a clear error if they're unset.
+  // Delegate a data-analysis OR identity/definition question to the Snowflake
+  // Cortex Agent "RocAgentInsight" (RocAgent's own operational-data agent).
+  // This is a REAL call to Snowflake's Cortex Agents REST API — it returns
+  // whatever the agent's semantic view / warehouse actually produced, never
+  // invented numbers. Reads credentials from env only (SNOWFLAKE_ACCOUNT,
+  // _USER, _PAT or _KEY); does nothing and returns a clear error if unset.
+  //
+  // NOTE: the tool schema in db.ts (DEFAULT_SCHEMA) is what actually decides
+  // when the LLM calls this — it must cover BOTH "what is RocAgentInsight"
+  // identity questions AND operational-metric questions, otherwise the model
+  // treats "RocAgentInsight" as an unknown local file/symbol and searches the
+  // project with list_project_files/search instead of calling this tool
+  // (observed bug: 2026-07-31, fixed by widening the db.ts description).
   query_snowflake_insight: async (args: { question: string; agent?: string; database?: string; schema?: string }) => {
     try {
       const question = (args.question || "").trim();
