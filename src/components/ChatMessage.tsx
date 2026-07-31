@@ -467,24 +467,18 @@ export function ChatMessage({ message }: ChatMessageProps) {
             )}
           </div>
 
-          {/* Copy Chat Button on EVERY message header (User and AI) */}
+          {/* Copy Chat Button on EVERY message header (User and AI) — icon only */}
           {message.text && (
             <button
               type="button"
               onClick={handleCopyMessage}
-              className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800/80 text-slate-400 hover:text-slate-100 text-[10px] font-mono transition-all cursor-pointer shadow-xs"
+              className="flex items-center justify-center p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800/80 text-slate-400 hover:text-slate-100 transition-all cursor-pointer shadow-xs"
               title="Copy chat text"
             >
               {copiedMessage ? (
-                <>
-                  <Check size={11} className="text-emerald-400 font-bold" />
-                  <span className="text-emerald-400 font-bold">Copied</span>
-                </>
+                <Check size={13} className="text-emerald-400 font-bold" />
               ) : (
-                <>
-                  <Copy size={11} />
-                  <span>Copy Chat</span>
-                </>
+                <Copy size={13} />
               )}
             </button>
           )}
