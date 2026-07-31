@@ -3,6 +3,52 @@
 > Snapshot hasil refactor. Berisi proyek lengkap (sudah termasuk semua perubahan).
 > Tidak menyertakan: `node_modules/`, `dist/`, `.git/`, `db.json`, `sessions/`, `.env`.
 
+## 2026-07-31 — Agent Multi: pipeline Scout → Builder/Modder → Breaker → Closer
+
+Fitur baru, murni aditif — tidak ada satu baris pun di `orchestrator.ts`,
+`commandGuard.ts`, `tools.ts`, atau `authMiddleware.ts` yang diubah.
+
+- **`server/agentOrchestra.ts`** (baru) — menjalankan 4 role berurutan di atas
+  `runOrchestrator` yang sudah ada, sehingga setiap tool call role tetap lewat
+  shell guard, SSRF guard, auth, dan logging `db.json` yang sama persis dengan
+  chat biasa:
+  - **Scout** — recon cepat read-only (list/read/search file, `git status/log`),
+    tidak menulis apa pun.
+  - **Builder/Modder** — implementasi nyata: tulis/edit file, jalankan
+    build/install/shell. Mengambil inisiatif, tidak bertanya balik ke user.
+  - **Breaker** — coba jebol hasil Builder: cari celah OWASP-style, divalidasi
+    lewat tool nyata.
+  - **Closer** — baca 3 laporan sebelumnya, vonis cepat: PASS / PASS WITH
+    NOTES / FAIL.
+  - Kegagalan jujur: pipeline berhenti bila satu role gagal, bukan
+    membiarkan role berikutnya mengarang kesimpulan dari data yang hilang.
+- **`server.ts`** — endpoint baru `POST /api/agents/orchestra/stream` (SSE),
+  pola identik `/api/chat/stream`.
+- **`src/types.ts`** — `AgentRole` diganti dari set lama yang tidak
+  terpakai (`architect|developer|pentester|qa` — tidak pernah di-import di
+  manapun, tanpa backend) menjadi `scout|builder|breaker|closer`.
+- **`src/components/OrchestraVisualizer.tsx`** — dihidupkan kembali (tadinya
+  dead code, tidak pernah dirender) dan di-retheme ke 4 role baru; sekaligus
+  memperbaiki bug lama `agent.name.split('_')[1]` yang akan pecah untuk nama
+  tanpa underscore (diganti field `badge` eksplisit).
+- **`src/lib/agentOrchestraStream.ts`** (baru) — SSE client, mengikuti
+  framing `lib/chatStream.ts`.
+- **`src/components/AgentOrchestraTab.tsx`** (baru) — launcher + visualizer
+  live + panel verdict Closer. Lazy-loaded (`React.lazy`) seperti
+  `SelfDevelopmentHub`, jadi bundle tab Chat default tidak membengkak.
+- **`src/components/Sidebar.tsx`** / **`src/App.tsx`** — tab baru "Agent
+  Multi" di navigasi.
+
+Verifikasi di sandbox:
+- `tsc --noEmit` → EXIT 0
+- `npm test` (guard + auth + endpoints + rocvault, 105 kasus) → semua lulus,
+  nol regresi
+- `npm run build` → sukses; ukuran bundle awal Chat tidak berubah (~470KB)
+  karena tab baru di-code-split ke chunk ~17KB terpisah
+- Smoke test langsung ke server (SSE, dengan & tanpa cookie auth): auth wall
+  tetap 401 tanpa login; pipeline 4-role mengalir step-by-step lewat SSE;
+  fallback jujur muncul saat tidak ada API key provider terkonfigurasi.
+
 ## Cara menjalankan (lokal)
 ```bash
 unzip roca-codex.zip

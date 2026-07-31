@@ -255,6 +255,7 @@ verifies a canary file survives repeated `rm -rf` attempts.
 server.ts               Express entry point, auth gate, HTTP API
 server/
   orchestrator.ts       Model loop, tool dispatch, SSE streaming
+  agentOrchestra.ts     Agent Multi — Scout/Builder/Breaker/Closer pipeline (see below)
   tools.ts              Tool implementations (file, shell, git, http, ssh)
   commandGuard.ts       Shell command inspection — see Security model
   authMiddleware.ts     Timing-safe password auth, token cookies
@@ -262,9 +263,52 @@ server/
   scheduler.ts          Background routines
   __tests__/            Guard unit + integration tests
 src/                    React frontend (Vite)
+  components/AgentOrchestraTab.tsx      Agent Multi launcher + live visualizer
+  components/OrchestraVisualizer.tsx    Node graph for the 4-role pipeline
+  lib/agentOrchestraStream.ts           SSE client for /api/agents/orchestra/stream
 dashboard/              Standalone monitoring page
 docs/                   Operational notes
 ```
+
+---
+
+## Agent Multi
+
+A four-role autonomous pipeline built **on top of** `runOrchestrator` — it does
+not replace or bypass it. Every role's tool calls go through the exact same
+shell guard, SSRF guard, auth and `db.json` logging as a normal chat turn.
+
+```
+Scout → Builder/Modder → Breaker → Closer
+```
+
+| Role | Job | Typical tools |
+|---|---|---|
+| **Scout** | Fast, read-only recon — catches project/file context before anything is built. | `list_project_files`, `read_project_file`, `search_codebase`, read-only shell |
+| **Builder/Modder** | Real implementation. Takes initiative and executes immediately — no clarifying questions. | `write_project_file`, `edit_project_file`, `run_bash_command`, `terminal_manager` |
+| **Breaker** | Tries to break what Builder just produced — injection, auth bypass, secret exposure, SSRF, path traversal — validated with real tool checks. | `search_codebase`, `run_bash_command`, `read_project_file` |
+| **Closer** | Reads the three prior reports and makes the fast final call. | Spot-check tool calls only when a claim looks unverified |
+
+Each role hands its report to the next in the `## Current Context` section of
+the system prompt — the same `buildSystemPrompt` mechanism `runOrchestrator`
+already uses for chat, just chained four times. If a role's underlying
+provider call fails, the pipeline stops with an honest failure instead of
+letting later roles verdict on missing data.
+
+**Endpoint:** `POST /api/agents/orchestra/stream` — same SSE framing as
+`/api/chat/stream` (`event: <type>\ndata: <json>\n\n`), with per-role events:
+`run_start`, `step_start`, `step_chunk`, `step_tool_start`, `step_tool_result`,
+`step_done`, `step_failed`, `run_done`. Requires the same session cookie as
+every other `/api/` route.
+
+**UI:** the "Agent Multi" tab in the sidebar. Launch a prompt, watch the four
+nodes light up in sequence, and read the Closer's verdict at the end. The tab
+is lazy-loaded, so it adds no weight to the default Chat bundle.
+
+**Security note:** this pipeline does not loosen `SHELL_GUARD` or any other
+protection — Builder and Breaker steps are exactly as constrained as a normal
+chat message. See [Security model](#security-model) above for what the guard
+does and does not cover.
 
 ### Related projects by the same author
 
