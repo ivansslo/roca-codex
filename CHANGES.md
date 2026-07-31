@@ -3,6 +3,47 @@
 > Snapshot hasil refactor. Berisi proyek lengkap (sudah termasuk semua perubahan).
 > Tidak menyertakan: `node_modules/`, `dist/`, `.git/`, `db.json`, `sessions/`, `.env`.
 
+## 2026-08-01 — Fix: kehabisan giliran tool disamarkan jadi "provider gagal total" (6 provider)
+
+Ditemukan saat owner meminta benchmark objektif CloudFerro Sherlock vs
+provider lain. Skenario uji: minta agent men-terminate VM OCI tanpa
+`compartmentId` dikonfigurasi. Alih-alih melaporkan info yang kurang,
+agent menghabiskan seluruh 12 giliran tool (`MAX_TOOL_TURNS`) mencoba
+menemukan `compartmentId` sendiri (cek env, baca config, grep kode,
+coba `oci` CLI langsung) — perilaku ini SENGAJA dan AMAN (`terminate`
+tidak pernah dipanggil tanpa info cukup, sesuai desain `confirm:true`
+di `oci_vm`), tapi begitu loop keluar karena mentok (bukan karena
+selesai), `content` respons API kosong, dan SEMUA fungsi provider
+(`callGroq`, `callOpenAI`, `callOpenRouter`, `callGemini`, `callRoadQwen`,
+`callCloudFerro`) salah menyimpulkan ini sebagai
+`"Provider returned empty response content"` — pesan yang identik
+dengan kegagalan API sungguhan, memicu failover ke provider berikutnya
+dan berpotensi menyesatkan pesan diagnostik akhir menuduh API
+key/kuota, padahal agent sebenarnya masih bekerja saat kehabisan
+giliran.
+
+**`server/orchestrator.ts`**: fungsi baru `toolBudgetExhaustedMessage()`
+membangun pesan jujur berisi daftar tool yang sudah dicoba, dipakai di
+titik keluar loop pada keenam fungsi provider di atas — dibedakan
+lewat pengecekan apakah `tool_calls` masih ada saat loop berhenti
+(mentok giliran) vs benar-benar tidak ada (selesai normal/API kosong
+sungguhan). Hasil "kehabisan giliran" dikembalikan sebagai jawaban
+biasa (bukan `throw`), sehingga TIDAK memicu failover ke provider
+lain — laporan jujur adalah jawaban valid, bukan kegagalan.
+`callCloudflare`/`callOciModel` tidak disentuh (keduanya tidak
+memanggil tool sama sekali, jadi tidak rentan bug ini).
+
+Diverifikasi live: skenario "terminate VM tanpa compartmentId" diulang
+setelah fix — hasil sekarang `"⚠️ Saya kehabisan jatah percobaan tool
+(12x) sebelum menyelesaikan permintaan ini — ini BUKAN kegagalan
+provider/API key/kuota"` beserta daftar 12 tool yang dicoba, alih-alih
+pesan lama yang menyesatkan.
+
+Verifikasi:
+- `npx tsc --noEmit` → 0 error.
+- `npx vite build` → sukses.
+- `npm test` → 6 suite, 134 kasus, 0 gagal, tanpa regresi.
+
 ## 2026-08-01 — Provider baru: CloudFerro Sherlock
 
 Diprakarsai investigasi log kegagalan orchestrator owner: dalam satu malam

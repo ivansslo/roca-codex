@@ -49,6 +49,30 @@ export type OrchestratorOptions = {
 // for multi-step goals (read → edit → run → fix → re-run), so the agent stopped mid-task.
 const MAX_TOOL_TURNS = 12;
 
+// Distinguish "the provider genuinely returned nothing" from "the tool-turn budget
+// (MAX_TOOL_TURNS) ran out while the model was still trying to call more tools".
+// Found 2026-08-01 during a CloudFerro Sherlock benchmark: asked the agent to
+// terminate an OCI VM with no compartmentId configured. Instead of saying so, it
+// spent all 12 tool turns hunting for the missing ID (checking env vars, reading
+// config templates, grepping the codebase, trying the oci CLI directly) — and
+// because the loop exits mid-search with a still-empty `content` field, EVERY
+// provider function below reported this identically to a real empty response and
+// threw "Provider returned empty response content". That sent a perfectly
+// functioning provider through the failover chain and, if the task happened to be
+// hard for the whole chain, produced a misleading final message blaming API
+// keys/quota for what was actually the agent running out of turns while still
+// working. This helper builds an honest message instead, listing what was
+// actually tried, and every provider function returns it directly rather than
+// throwing — this is a legitimate (if incomplete) answer, not a provider failure,
+// so it should not trigger failover to the next provider.
+function toolBudgetExhaustedMessage(executionLogs: any[]): string {
+  const toolNames = executionLogs.map((l: any) => l.toolName);
+  const summary = toolNames.length
+    ? `Tool yang sempat dipanggil (${toolNames.length}x): ${toolNames.join(", ")}.`
+    : "Belum ada tool yang berhasil dipanggil.";
+  return `⚠️ Saya kehabisan jatah percobaan tool (${MAX_TOOL_TURNS}x) sebelum menyelesaikan permintaan ini — ini BUKAN kegagalan provider/API key/kuota. ${summary}\n\nKemungkinan penyebab: informasi yang dibutuhkan (mis. ID resource, compartment, path file) belum tersedia dan saya terus mencoba mencarinya sendiri. Beri saya info itu langsung, atau minta saya laporkan lebih detail apa saja yang sudah ditemukan sejauh ini.`;
+}
+
 // Goal-executing agent prompt: the agent must ACCOMPLISH the user's intent AND never fabricate results.
 const OWNER_SYSTEM_PROMPT_BASE = `You are RocAgent, an autonomous goal-executing engineering agent in a LIVE workspace with REAL tool access (read/write/edit files, search, run shell, zip inspection, memory, http).
 
@@ -342,8 +366,17 @@ async function callGroq(messages: any[], modelName: string, executionLogs: any[]
     data = await resp.json();
   }
 
+  const stillWantsTools = !!(data.choices && data.choices[0]?.message?.tool_calls);
   const responseText = data.choices && data.choices[0]?.message?.content ? data.choices[0].message.content : "";
   if (!responseText || !responseText.trim()) {
+    if (stillWantsTools) {
+      // Loop exited because MAX_TOOL_TURNS ran out while the model was still trying
+      // to call more tools, not because the provider returned nothing. See
+      // toolBudgetExhaustedMessage() for the full incident this fixes.
+      const text = toolBudgetExhaustedMessage(executionLogs);
+      onProgress?.({ type: 'chunk', data: { text } });
+      return { text, logs: executionLogs };
+    }
     throw new Error("Provider returned empty response content");
   }
   onProgress?.({ type: 'chunk', data: { text: responseText } });
@@ -434,8 +467,14 @@ async function callOpenAI(messages: any[], modelName: string, executionLogs: any
       data = await resp.json();
     }
 
+    const stillWantsTools = !!(data.choices && data.choices[0]?.message?.tool_calls);
     const responseText = data.choices && data.choices[0]?.message?.content ? data.choices[0].message.content : "";
     if (!responseText || !responseText.trim()) {
+      if (stillWantsTools) {
+        const text = toolBudgetExhaustedMessage(executionLogs);
+        onProgress?.({ type: 'chunk', data: { text } });
+        return { text, logs: executionLogs };
+      }
       throw new Error("Provider returned empty response content");
     }
     onProgress?.({ type: 'chunk', data: { text: responseText } });
@@ -557,8 +596,17 @@ async function callOpenRouter(messages: any[], modelName: string, executionLogs:
     data = await resp.json();
   }
 
+  const stillWantsTools = !!(data.choices && data.choices[0]?.message?.tool_calls);
   const responseText = data.choices && data.choices[0]?.message?.content ? data.choices[0].message.content : "";
   if (!responseText || !responseText.trim()) {
+    if (stillWantsTools) {
+      // Loop exited because MAX_TOOL_TURNS ran out while the model was still trying
+      // to call more tools, not because the provider returned nothing. See
+      // toolBudgetExhaustedMessage() for the full incident this fixes.
+      const text = toolBudgetExhaustedMessage(executionLogs);
+      onProgress?.({ type: 'chunk', data: { text } });
+      return { text, logs: executionLogs };
+    }
     throw new Error("Provider returned empty response content");
   }
   onProgress?.({ type: 'chunk', data: { text: responseText } });
@@ -645,12 +693,20 @@ async function callGemini(messages: any[], modelName: string, executionLogs: any
 
       let finalText = '';
       let turnCount = 0;
+      let exhaustedToolBudget = false;
       while (turnCount < MAX_TOOL_TURNS) {
         turnCount++;
         const { turnText, calls } = await runOnce();
         if (!calls || calls.length === 0) {
           finalText = turnText;          // last generation = the answer
           break;
+        }
+        if (turnCount === MAX_TOOL_TURNS) {
+          // Same class of bug fixed for the other providers: ran out of turns
+          // while the model still wanted to call tools. Report it honestly
+          // instead of silently falling through to try another Gemini model,
+          // which would look like this model simply produced no answer.
+          exhaustedToolBudget = true;
         }
         // Execute tool calls in parallel, append results, then continue the conversation.
         const toolResponses = await Promise.all(calls.map(async (call) => {
@@ -670,6 +726,11 @@ async function callGemini(messages: any[], modelName: string, executionLogs: any
 
       if (finalText.trim()) {
         return { text: finalText, logs: executionLogs };
+      }
+      if (exhaustedToolBudget) {
+        const text = toolBudgetExhaustedMessage(executionLogs);
+        onProgress?.({ type: 'chunk', data: { text } });
+        return { text, logs: executionLogs };
       }
     } catch (err: any) {
       const msg = String(err?.message || "");
@@ -848,10 +909,19 @@ async function callRoadQwen(messages: any[], modelName: string, executionLogs: a
         data = await resp.json();
       }
 
+      const stillWantsTools = !!(data.choices && data.choices[0]?.message?.tool_calls);
       const responseText = data.choices && data.choices[0]?.message?.content ? data.choices[0].message.content : "";
       if (responseText && responseText.trim()) {
         onProgress?.({ type: 'chunk', data: { text: responseText } });
         return { text: responseText, logs: executionLogs };
+      }
+      if (stillWantsTools) {
+        // Same fix as the other providers: ran out of MAX_TOOL_TURNS while the
+        // model was still trying to call tools — an honest partial answer, not an
+        // endpoint failure, so don't fail over to the next RoadQwen endpoint.
+        const text = toolBudgetExhaustedMessage(executionLogs);
+        onProgress?.({ type: 'chunk', data: { text } });
+        return { text, logs: executionLogs };
       }
     } catch (err: any) {
       safeConsoleWarn(`[RoadQwen Endpoint Failover] Endpoint ${baseUrl} failed: ${err.message}`);
@@ -949,8 +1019,17 @@ async function callCloudFerro(messages: any[], modelName: string, executionLogs:
     data = await resp.json();
   }
 
+  const stillWantsTools = !!(data.choices && data.choices[0]?.message?.tool_calls);
   const responseText = data.choices && data.choices[0]?.message?.content ? data.choices[0].message.content : "";
   if (!responseText || !responseText.trim()) {
+    if (stillWantsTools) {
+      // Loop exited because MAX_TOOL_TURNS ran out while the model was still trying
+      // to call more tools, not because the provider returned nothing. See
+      // toolBudgetExhaustedMessage() for the full incident this fixes.
+      const text = toolBudgetExhaustedMessage(executionLogs);
+      onProgress?.({ type: 'chunk', data: { text } });
+      return { text, logs: executionLogs };
+    }
     throw new Error("Provider returned empty response content");
   }
   onProgress?.({ type: 'chunk', data: { text: responseText } });
