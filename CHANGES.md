@@ -3,6 +3,63 @@
 > Snapshot hasil refactor. Berisi proyek lengkap (sudah termasuk semua perubahan).
 > Tidak menyertakan: `node_modules/`, `dist/`, `.git/`, `db.json`, `sessions/`, `.env`.
 
+## 2026-07-31 — Agent Multi: 8 role, 2 pipeline + CLI
+
+Menambah pipeline kedua ke Agent Multi dan perintah CLI untuk memicunya.
+Murni aditif — tidak ada perubahan di `orchestrator.ts`, `commandGuard.ts`,
+`tools.ts`, atau `authMiddleware.ts`.
+
+- **`server/agentOrchestra.ts`** — direfaktor untuk mendukung banyak pipeline
+  (`AGENT_MULTI_PIPELINES`), bukan satu rantai 4-role hardcoded:
+  - `fast` (sudah ada): Scout → Builder/Modder → Breaker → Closer.
+  - **`engineering`** (baru) — diadaptasi dari 4-Step Engineering Orchestra
+    milik [roc-webui](https://github.com/ivansslo/roc-webui) (Apache-2.0):
+    Chief Architect → Lead Developer → Security Pentester → QA Supervisor.
+    Berbeda dari roc-webui yang berjalan di atas simulator offline, di sini
+    setiap role memakai tool RocAgent yang nyata — Architect membaca
+    workspace sungguhan sebelum bikin blueprint, Developer menulis file asli
+    (bukan cuma blok markdown), dan Pentester/QA menautkan skor/coverage-nya
+    ke tool call yang benar-benar dijalankan.
+  - Hand-off antar role kini generik (berdasar urutan pipeline), bukan
+    hardcode nama role tertentu — jadi pipeline baru bisa ditambah tanpa
+    mengubah logic hand-off.
+  - `extractStepMeta()` mem-parsing tag `[ SCORE: A ]` / `[ COVERAGE: 94% ]`
+    / `[ RELEASE: v1.0.0-rc1 ]` dari output role (konvensi yang sama dengan
+    roc-webui) jadi `step.meta` terstruktur.
+- **`server.ts`** — `POST /api/agents/orchestra/stream` menerima field baru
+  `pipeline: "fast" | "engineering"` (default `fast`, jadi permintaan lama
+  tanpa field ini tetap jalan seperti sebelumnya).
+- **`src/types.ts`** — `AgentRole` diperluas ke 8 nilai; `AgentMultiPipelineId`
+  dan `AgentStepMeta` baru.
+- **`src/components/OrchestraVisualizer.tsx`** — ditulis ulang generik untuk
+  N pipeline (`AGENT_LIBRARY` + `PIPELINE_ROLES`) alih-alih 4 posisi node
+  hardcoded; menampilkan tag SCORE/COVERAGE/RELEASE di panel detail role.
+- **`src/components/AgentOrchestraTab.tsx`** — pemilih pipeline (fast /
+  engineering) sebelum launcher.
+- **`rocagent-cli.ts`** — perintah baru:
+  - `/agents [fast|engineering] <tugas>` — jalankan pipeline, streaming SSE
+    langsung ke terminal (parser SSE sama persis dengan
+    `lib/agentOrchestraStream.ts` di web UI).
+  - `/pipelines` — daftar kedua pipeline dan role-nya.
+  - `tools/rocagent-cli` (wrapper bash) — teks `--help` diperbarui.
+- **README.md** — bagian "Agent Multi" ditulis ulang untuk 8 role/2 pipeline;
+  atribusi roc-webui ditambahkan ke "Related projects".
+
+Verifikasi di sandbox:
+- `tsc --noEmit` → EXIT 0
+- `npm test` (guard + auth + endpoints + rocvault, 105 kasus) → semua lulus,
+  nol regresi
+- `npm run build` → sukses; chunk `AgentOrchestraTab` tetap kecil (~21KB),
+  bundle Chat default tidak berubah (~470KB)
+- Smoke test SSE langsung (server sungguhan, dengan & tanpa cookie auth):
+  pipeline `engineering` mengalir step-by-step untuk keempat role
+  (architect/developer/pentester/qa); pipeline `fast` dan permintaan tanpa
+  field `pipeline` tetap berjalan seperti sebelumnya (regresi nol)
+- Parser SSE baru di `rocagent-cli.ts` diuji terisolasi dengan frame SSE
+  tiruan yang identik dengan yang ditulis `server.ts` — seluruh assertion
+  lulus (event count, `pipeline` di `run_start`, `role` di setiap step,
+  `meta.securityScore` ter-parse dari `step_done`)
+
 ## 2026-07-31 — Agent Multi: pipeline Scout → Builder/Modder → Breaker → Closer
 
 Fitur baru, murni aditif — tidak ada satu baris pun di `orchestrator.ts`,

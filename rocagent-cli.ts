@@ -19,13 +19,15 @@
  *   rocvault run ~/.config/rocagent/app.env.vault -- npm run cli -- "sebuah prompt"
  *
  * Perintah dalam sesi:
- *   /model [id]   lihat atau ganti model
- *   /persona [id] lihat atau ganti persona
- *   /new          mulai sesi baru
- *   /stat         status server dan penyedia
- *   /clear        bersihkan layar
- *   /help         bantuan
- *   /exit         keluar
+ *   /model [id]     lihat atau ganti model
+ *   /persona [id]   lihat atau ganti persona
+ *   /agents [pipeline] <task>   jalankan Agent Multi (8 role, 2 pipeline)
+ *   /pipelines      daftar pipeline Agent Multi
+ *   /new            mulai sesi baru
+ *   /stat           status server dan penyedia
+ *   /clear          bersihkan layar
+ *   /help           bantuan
+ *   /exit           keluar
  */
 
 import readline from "node:readline";
@@ -240,6 +242,142 @@ async function cmdStat() {
   out(`  sesi      ${sessionId} (${history.length} pesan)`);
 }
 
+// ─── Agent Multi (8 role di 2 pipeline) ─────────────────────────────
+// Sama seperti UI web: memanggil /api/agents/orchestra/stream (SSE), yang
+// menjalankan runOrchestrator per role lewat orkestrator yang sama — shell
+// guard, SSRF guard, dan pencatatan db.json tetap berlaku persis seperti
+// chat biasa. CLI hanya mem-parsing frame SSE dan mencetaknya ke terminal.
+const PIPELINE_ROLES: Record<string, string[]> = {
+  fast: ["scout", "builder", "breaker", "closer"],
+  engineering: ["architect", "developer", "pentester", "qa"],
+};
+const PIPELINE_DESC: Record<string, string> = {
+  fast: "Scout → Builder/Modder → Breaker → Closer — cepat, inisiatif tinggi",
+  engineering: "Chief Architect → Lead Developer → Security Pentester → QA Supervisor — pipeline rekayasa penuh",
+};
+const ROLE_LABEL: Record<string, string> = {
+  scout: "Scout", builder: "Builder/Modder", breaker: "Breaker", closer: "Closer",
+  architect: "Chief Architect", developer: "Lead Developer", pentester: "Security Pentester", qa: "QA Supervisor",
+};
+
+function cmdPipelines() {
+  out(`${C.bold}Pipeline Agent Multi${C.reset}`);
+  for (const [id, roles] of Object.entries(PIPELINE_ROLES)) {
+    out(`  ${C.cyan}${id}${C.reset}  ${C.dim}${PIPELINE_DESC[id]}${C.reset}`);
+    dim(`    role: ${roles.map((r) => ROLE_LABEL[r]).join(" → ")}`);
+  }
+  dim("  /agents [fast|engineering] <task> untuk menjalankan");
+}
+
+/** Parser SSE minimal untuk stream fetch() Node — sama framing dengan lib/agentOrchestraStream.ts. */
+async function consumeAgentOrchestraStream(body: ReadableStream<Uint8Array>, onEvent: (event: string, data: any) => void) {
+  const reader = (body as any).getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let currentEvent = "message";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (line.startsWith(":")) continue;
+      if (line.startsWith("event: ")) { currentEvent = line.slice(7).trim(); continue; }
+      if (line.startsWith("data: ")) {
+        const raw = line.slice(6);
+        let data: any = raw;
+        try { data = JSON.parse(raw); } catch { /* keep raw string */ }
+        onEvent(currentEvent, data);
+      }
+    }
+  }
+}
+
+async function cmdAgents(arg: string) {
+  const parts = arg.trim().split(/\s+/);
+  let pipeline = "fast";
+  let taskParts = parts;
+  if (parts[0] === "fast" || parts[0] === "engineering") {
+    pipeline = parts[0];
+    taskParts = parts.slice(1);
+  }
+  const task = taskParts.join(" ").trim();
+
+  if (!task) {
+    err("Tugas kosong.");
+    dim(`  Pakai: /agents [fast|engineering] <deskripsi tugas>`);
+    dim(`  Lihat pipeline: /pipelines`);
+    return;
+  }
+
+  const roles = PIPELINE_ROLES[pipeline];
+  out(`${C.mag}${C.bold}▶ Agent Multi${C.reset} ${C.dim}(${pipeline}: ${roles.map((r) => ROLE_LABEL[r]).join(" → ")})${C.reset}`);
+  out("");
+
+  let resp: Response;
+  try {
+    resp = await req("/api/agents/orchestra/stream", {
+      method: "POST",
+      body: JSON.stringify({
+        messages: [{ id: "cli_agent_multi", role: "user", text: task }],
+        model, provider, persona, pipeline,
+      }),
+    });
+  } catch (e: any) {
+    err(`Permintaan gagal: ${e?.message || e}`);
+    return;
+  }
+
+  if (!resp.ok || !resp.body) {
+    err(`HTTP ${resp.status} dari /api/agents/orchestra/stream`);
+    return;
+  }
+
+  let finalStatus = "unknown";
+  await consumeAgentOrchestraStream(resp.body as any, (event, data) => {
+    switch (event) {
+      case "run_start":
+        dim(`  ${data?.message || "pipeline dimulai"}`);
+        break;
+      case "step_start":
+        out(`${C.cyan}${C.bold}◆ ${ROLE_LABEL[data.role] || data.role}${C.reset} ${C.dim}sedang bekerja…${C.reset}`);
+        break;
+      case "step_tool_start":
+        dim(`    ⚙ ${data.toolName || data.tool || "(tool)"}`);
+        break;
+      case "step_done": {
+        const meta = data.meta || {};
+        const tags = [
+          meta.securityScore ? `SCORE:${meta.securityScore}` : null,
+          meta.qaCoverage ? `COVERAGE:${meta.qaCoverage}` : null,
+          meta.releaseTag ? `RELEASE:${meta.releaseTag}` : null,
+        ].filter(Boolean).join(" ");
+        ok(`${ROLE_LABEL[data.role] || data.role} selesai${tags ? ` ${C.dim}[${tags}]${C.reset}` : ""}`);
+        if (data.output) out(`  ${data.output.split("\n").join("\n  ")}`);
+        out("");
+        break;
+      }
+      case "step_failed":
+        err(`${ROLE_LABEL[data.role] || data.role} gagal: ${data.error}`);
+        break;
+      case "done":
+      case "run_done":
+        finalStatus = data?.status || finalStatus;
+        break;
+      case "error":
+        err(typeof data === "string" ? data : data?.error || "stream error");
+        break;
+    }
+  });
+
+  if (finalStatus === "completed") ok("Pipeline selesai.");
+  else if (finalStatus === "failed") err("Pipeline berhenti karena error.");
+}
+
 function banner() {
   out("");
   out(`${C.mag}${C.bold}  ⚡ RocAgent CLI${C.reset}  ${C.dim}${BASE}${C.reset}`);
@@ -250,6 +388,8 @@ function help() {
   out(`${C.bold}Perintah${C.reset}`);
   out(`  ${C.cyan}/model${C.reset} [id]     lihat / ganti model`);
   out(`  ${C.cyan}/persona${C.reset} [id]   lihat / ganti persona`);
+  out(`  ${C.cyan}/agents${C.reset} [fast|engineering] <tugas>   jalankan Agent Multi (8 role)`);
+  out(`  ${C.cyan}/pipelines${C.reset}      daftar pipeline Agent Multi & role-nya`);
   out(`  ${C.cyan}/new${C.reset}            sesi baru (riwayat dikosongkan)`);
   out(`  ${C.cyan}/stat${C.reset}           status server & penyedia`);
   out(`  ${C.cyan}/clear${C.reset}          bersihkan layar`);
@@ -293,6 +433,8 @@ async function main() {
         case "clear": stdout.write("\x1b[2J\x1b[H"); banner(); break;
         case "model": case "m": await cmdModel(arg); break;
         case "persona": case "p": cmdPersona(arg); break;
+        case "agents": case "orchestra": await cmdAgents(arg); break;
+        case "pipelines": cmdPipelines(); break;
         case "stat": case "status": await cmdStat(); break;
         case "new":
           history.length = 0;

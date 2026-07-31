@@ -21,6 +21,8 @@ rocagent-cli — klien terminal untuk server RocAgent
 Perintah dalam sesi:
   /model [id]     lihat / ganti model
   /persona [id]   lihat / ganti persona
+  /agents [fast|engineering] <tugas>   jalankan Agent Multi (8 role)
+  /pipelines      daftar pipeline Agent Multi & role-nya
   /new            sesi baru
   /stat           status server & penyedia
   /clear /help /exit

@@ -206,7 +206,12 @@ async function startServer() {
     }
   });
 
-  // Agent Multi — Scout -> Builder/Modder -> Breaker -> Closer pipeline (SSE).
+  // Agent Multi — 8 roles across 2 selectable pipelines (SSE).
+  //   pipeline=fast (default): Scout -> Builder/Modder -> Breaker -> Closer
+  //   pipeline=engineering: Chief Architect -> Lead Developer ->
+  //                         Security Pentester -> QA Supervisor
+  //     (adapted from github.com/ivansslo/roc-webui's 4-agent orchestra,
+  //     Apache-2.0, rebuilt on real RocAgent tools)
   // Same request/response shape as /api/chat/stream on purpose: it reuses
   // runOrchestrator underneath (see server/agentOrchestra.ts), so it inherits
   // auth, the shell guard, the SSRF guard and db logging without any changes
@@ -219,16 +224,16 @@ async function startServer() {
     if (typeof res.flushHeaders === "function") res.flushHeaders();
 
     try {
-      const { messages, model, provider, persona } = req.body;
+      const { messages, model, provider, persona, pipeline } = req.body;
       if (!messages || !Array.isArray(messages)) {
         res.write(`event: error\ndata: ${JSON.stringify({ error: "Invalid messages array" })}\n\n`);
         return res.end();
       }
 
-      res.write(`event: run_start\ndata: ${JSON.stringify({ message: "Agent Multi pipeline starting..." })}\n\n`);
+      res.write(`event: run_start\ndata: ${JSON.stringify({ message: "Agent Multi pipeline starting...", pipeline: pipeline || "fast" })}\n\n`);
 
       const result = await runAgentOrchestra(messages, {
-        model, provider, persona,
+        model, provider, persona, pipeline,
         onProgress: (evt) => {
           res.write(`event: ${evt.type}\ndata: ${JSON.stringify(evt.data)}\n\n`);
           if (evt.type === "step_tool_start" || evt.type === "step_tool_result") {
@@ -243,6 +248,7 @@ async function startServer() {
       console.error("Agent Orchestra Stream Error:", error);
       res.write(`event: error\ndata: ${JSON.stringify({ error: error.message || "Agent Multi streaming failed" })}\n\n`);
       res.end();
+
     }
   });
 

@@ -136,7 +136,19 @@ rocvault run ~/.config/rocagent/app.env.vault -- npm run cli -- "one-shot prompt
 
 `rocagent-cli` talks to the local server over HTTP, so it shares sessions,
 memory and tools with the web UI. In-session: `/model`, `/persona`, `/new`,
-`/stat`, `/help`, `/exit`.
+`/stat`, `/help`, `/exit`, plus Agent Multi:
+
+```
+/pipelines                              list both pipelines and their roles
+/agents <task>                          run the "fast" pipeline (default)
+/agents engineering <task>              run the "engineering" pipeline
+```
+
+Streams the same `/api/agents/orchestra/stream` SSE events the web UI's
+"Agent Multi" tab uses — each role's report prints as it completes, with
+`[ SCORE ]` / `[ COVERAGE ]` / `[ RELEASE ]` tags shown inline when the
+engineering pipeline's Pentester/QA emit them. See [Agent
+Multi](#agent-multi) above for what each of the 8 roles does.
 
 ### Multiple providers
 
@@ -274,39 +286,63 @@ docs/                   Operational notes
 
 ## Agent Multi
 
-A four-role autonomous pipeline built **on top of** `runOrchestrator` — it does
-not replace or bypass it. Every role's tool calls go through the exact same
-shell guard, SSRF guard, auth and `db.json` logging as a normal chat turn.
+Eight roles across two selectable pipelines, built **on top of**
+`runOrchestrator` — it does not replace or bypass it. Every role's tool calls
+go through the exact same shell guard, SSRF guard, auth and `db.json` logging
+as a normal chat turn.
 
 ```
-Scout → Builder/Modder → Breaker → Closer
+fast:        Scout → Builder/Modder → Breaker → Closer
+engineering: Chief Architect → Lead Developer → Security Pentester → QA Supervisor
 ```
 
-| Role | Job | Typical tools |
-|---|---|---|
-| **Scout** | Fast, read-only recon — catches project/file context before anything is built. | `list_project_files`, `read_project_file`, `search_codebase`, read-only shell |
-| **Builder/Modder** | Real implementation. Takes initiative and executes immediately — no clarifying questions. | `write_project_file`, `edit_project_file`, `run_bash_command`, `terminal_manager` |
-| **Breaker** | Tries to break what Builder just produced — injection, auth bypass, secret exposure, SSRF, path traversal — validated with real tool checks. | `search_codebase`, `run_bash_command`, `read_project_file` |
-| **Closer** | Reads the three prior reports and makes the fast final call. | Spot-check tool calls only when a claim looks unverified |
+The `engineering` pipeline is adapted from
+[roc-webui](https://github.com/ivansslo/roc-webui)'s "4-Step Engineering
+Orchestra" (Apache-2.0) — same four roles and the same `[ SCORE: A ]` /
+`[ COVERAGE: 94% ]` / `[ RELEASE: v1.0.0-rc1 ]` sign-off convention, but
+rebuilt here on real RocAgent tools instead of that project's offline
+simulator: Architect reads the actual workspace before blueprinting,
+Developer writes real files instead of stopping at a markdown block, and
+Pentester/QA ground their score and coverage claims in files they actually
+inspected or tests they actually ran.
 
-Each role hands its report to the next in the `## Current Context` section of
-the system prompt — the same `buildSystemPrompt` mechanism `runOrchestrator`
-already uses for chat, just chained four times. If a role's underlying
-provider call fails, the pipeline stops with an honest failure instead of
-letting later roles verdict on missing data.
+| Pipeline | Role | Job | Typical tools |
+|---|---|---|---|
+| fast | **Scout** | Fast, read-only recon — catches project/file context before anything is built. | `list_project_files`, `read_project_file`, `search_codebase`, read-only shell |
+| fast | **Builder/Modder** | Real implementation. Takes initiative and executes immediately — no clarifying questions. | `write_project_file`, `edit_project_file`, `run_bash_command`, `terminal_manager` |
+| fast | **Breaker** | Tries to break what Builder just produced — injection, auth bypass, secret exposure, SSRF, path traversal — validated with real tool checks. | `search_codebase`, `run_bash_command`, `read_project_file` |
+| fast | **Closer** | Reads the prior reports and makes the fast final call. | Spot-check tool calls only when a claim looks unverified |
+| engineering | **Chief Architect** | Designs the system blueprint — file layout, tech stack, security posture, data schema. | `list_project_files`, `read_project_file`, `search_codebase`, `git log/diff` |
+| engineering | **Lead Developer** | Implements the blueprint for real. | `write_project_file`, `edit_project_file`, `run_bash_command`, `terminal_manager` |
+| engineering | **Security Pentester** | OWASP Top 10 audit of what Developer produced, with an explicit score. | `read_project_file`, `search_codebase`, `run_bash_command`, `[ SCORE ]` |
+| engineering | **QA Supervisor** | Regression test spec/execution, coverage, release sign-off. | `write_project_file`, `run_bash_command`, `[ COVERAGE ]`, `[ RELEASE ]` |
+
+Each role hands its report to every later role in its pipeline via the same
+`## Current Context` mechanism `buildSystemPrompt` already uses for chat —
+hand-off is generic (by pipeline order), not hardcoded per role name. If a
+role's underlying provider call fails, the pipeline stops with an honest
+failure instead of letting later roles verdict on missing data.
 
 **Endpoint:** `POST /api/agents/orchestra/stream` — same SSE framing as
-`/api/chat/stream` (`event: <type>\ndata: <json>\n\n`), with per-role events:
-`run_start`, `step_start`, `step_chunk`, `step_tool_start`, `step_tool_result`,
-`step_done`, `step_failed`, `run_done`. Requires the same session cookie as
-every other `/api/` route.
+`/api/chat/stream` (`event: <type>\ndata: <json>\n\n`), with an added
+`pipeline: "fast" | "engineering"` request field (default `fast`) and
+per-role events: `run_start`, `step_start`, `step_chunk`, `step_tool_start`,
+`step_tool_result`, `step_done` (carries `meta.securityScore` /
+`meta.qaCoverage` / `meta.releaseTag` when the engineering pipeline's
+Pentester/QA emit them), `step_failed`, `run_done`. Requires the same session
+cookie as every other `/api/` route.
 
-**UI:** the "Agent Multi" tab in the sidebar. Launch a prompt, watch the four
-nodes light up in sequence, and read the Closer's verdict at the end. The tab
-is lazy-loaded, so it adds no weight to the default Chat bundle.
+**UI:** the "Agent Multi" tab in the sidebar — pick a pipeline, launch a
+prompt, watch the four nodes light up in sequence, and read the final role's
+verdict at the end. The tab is lazy-loaded, so it adds no weight to the
+default Chat bundle.
+
+**CLI:** `rocagent-cli` (see [Terminal client](#terminal-client) below) has
+the same pipelines via `/agents [fast|engineering] <task>` and `/pipelines`,
+streaming the same SSE events straight to the terminal.
 
 **Security note:** this pipeline does not loosen `SHELL_GUARD` or any other
-protection — Builder and Breaker steps are exactly as constrained as a normal
+protection — every role's tool calls are exactly as constrained as a normal
 chat message. See [Security model](#security-model) above for what the guard
 does and does not cover.
 
@@ -320,6 +356,7 @@ libraries — they provide the environment, RocAgent runs inside it.
 | [rootd-fs](https://github.com/ivansslo/rootd-fs) | Rootless container runtime for Termux (MIT) |
 | [termuxrd](https://github.com/ivansslo/termuxrd) | Termux environment setup (MIT) |
 | [termuxrd-cloud](https://github.com/ivansslo/termuxrd-cloud) | Phone-to-cloud VM bridge over Tailscale (MIT) |
+| [roc-webui](https://github.com/ivansslo/roc-webui) | Source of the "engineering" Agent Multi pipeline's role design (Apache-2.0) |
 
 ---
 

@@ -19,6 +19,7 @@ export interface AgentOrchestraOptions {
   model?: string;
   provider?: string;
   persona?: string;
+  pipeline?: 'fast' | 'engineering';
   signal?: AbortSignal;
 }
 
@@ -32,10 +33,12 @@ export async function streamAgentOrchestra(opts: AgentOrchestraOptions, handlers
         messages: opts.messages,
         model: opts.model,
         provider: opts.provider,
-        persona: opts.persona
+        persona: opts.persona,
+        pipeline: opts.pipeline
       }),
       signal: opts.signal
     });
+
   } catch (e: any) {
     if (e?.name !== 'AbortError') handlers.onError?.(e?.message || 'Koneksi gagal');
     return;
