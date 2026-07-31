@@ -3,6 +3,16 @@
 > Owner: Ivan Ssl (ivansslo) — 2026-07-22 Asia/Jakarta
 > Infra: OCI Singapore `161.118.253.28` → Tailscale `100.93.139.73` → Aperture Beta `roadfx`
 
+> **Update 2026-07-31:** Tailscale IP tailnet untuk VM ini sudah berubah 2x
+> sejak catatan di bawah ditulis (lihat
+> [`TROUBLESHOOT_IP_CHANGED_100_100_237_104.md`](TROUBLESHOOT_IP_CHANGED_100_100_237_104.md)).
+> IP di bawah ini (`161.118.253.28`, `100.93.139.73`) dipertahankan apa
+> adanya sebagai catatan historis persis seperti saat ditulis — **jangan
+> pakai IP-IP ini untuk koneksi baru**. Gunakan hostname MagicDNS
+> `awsx.tail759f3e.ts.net`, yang tetap stabil meski IP tailnet di
+> baliknya berganti. Referensi terbaru: `docs/cloud.env.template`
+> (`VM_TAILSCALE_HOSTNAME`, `OCI_MODEL_ENDPOINT`).
+
 ## 1. Apa yang terjadi di screenshot?
 
 Kamu membuka **https://aperture.tailscale.com/signup** → Setting up **roadfx**

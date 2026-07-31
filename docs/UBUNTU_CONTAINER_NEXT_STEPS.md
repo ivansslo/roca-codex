@@ -2,6 +2,12 @@
 
 > Log screenshot: `Switching ipn state Starting → Running`, `magicsock: derp-3 connected`, `derp-3 (sin)` Singapore, endpoints changed... `root@localhost:~#`
 
+> **Update 2026-07-31:** Node `roadfx` yang disebut di bawah sudah di-rename
+> jadi `awsx` (IP `100.100.237.104` tetap sama). Pakai hostname
+> `awsx.tail759f3e.ts.net` untuk konfigurasi baru — lihat
+> `docs/cloud.env.template`. Isi di bawah dipertahankan apa adanya sebagai
+> catatan historis dengan nama lama.
+
 ## Status Saat Ini ✅
 
 - `tailscaled` sudah jalan (userspace / proot mode)

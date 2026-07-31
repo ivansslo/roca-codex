@@ -2,6 +2,14 @@
 
 > Screenshots baru: roadfx = 100.100.237.104 (roadfx.tail759f3e.ts.net) hijau Ready, bisa ping. Tapi terminal `root@localhost` error pakai `tskey-api-...`
 
+> **Update 2026-07-31:** Node Tailscale ini sudah di-rename dari `roadfx`
+> menjadi `awsx` di Tailscale admin (IP `100.100.237.104` tetap sama, hanya
+> nama device yang berubah). Hostname MagicDNS yang berlaku sekarang:
+> `awsx.tail759f3e.ts.net`. Isi dokumen di bawah ini dipertahankan persis
+> seperti saat ditulis (nama lama `roadfx`) sebagai catatan historis —
+> untuk konfigurasi baru pakai `awsx.tail759f3e.ts.net`, lihat
+> `docs/cloud.env.template` (`VM_TAILSCALE_HOSTNAME`, `OCI_MODEL_ENDPOINT`).
+
 ## Analisis Screenshot
 
 **Screenshot 1 & 2:**
