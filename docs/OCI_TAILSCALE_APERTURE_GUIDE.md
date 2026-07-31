@@ -180,7 +180,7 @@ Muncul di `SyncDashboard.tsx` sebagai card "Aperture Beta (roadfx)" + "OCI ↔ T
 - [ ] SSH ke OCI → `bash oci/setup-tailscale.sh` dengan `TAILSCALE_AUTH_KEY=tskey-auth-...`
 - [ ] Di Termux → `tailscale up --auth-key=tskey-auth-...`
 - [ ] Test: `tailscale ping 100.93.139.73` + `ssh ubuntu@100.93.139.73`
-- [ ] Install default shell script: `curl -fsSL https://raw.githubusercontent.com/ivansslo/rocagents/main/termux-rocd/oci-default-shell.sh | bash`
+- [ ] Install default shell script: ~~`curl -fsSL https://raw.githubusercontent.com/ivansslo/rocagents/main/termux-rocd/oci-default-shell.sh | bash`~~ **(basi — repo `ivansslo/rocagents` sudah dihapus, URL ini 404. Salin skrip `oci-default-shell.sh` secara manual dari sesi lampau jika masih dibutuhkan.)**
 - [ ] Restart Termux → otomatis masuk OCI
 
 ## 8. Keamanan

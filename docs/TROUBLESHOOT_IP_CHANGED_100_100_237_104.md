@@ -99,6 +99,8 @@ tailscale ping 100.100.237.104
 ssh ubuntu@100.100.237.104  # atau ubuntu-oci.tail759f3e.ts.net
 
 # pasang default shell
+# CATATAN: repo ivansslo/rocagents sudah dihapus, URL di bawah 404. Salin
+# oci-default-shell.sh secara manual dari sesi lampau jika masih dibutuhkan.
 curl -fsSL https://raw.githubusercontent.com/ivansslo/rocagents/main/termux-rocd/oci-default-shell.sh | bash
 touch ~/.oci-default-shell-enabled
 # restart Termux

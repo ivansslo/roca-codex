@@ -3,6 +3,82 @@
 > Snapshot hasil refactor. Berisi proyek lengkap (sudah termasuk semua perubahan).
 > Tidak menyertakan: `node_modules/`, `dist/`, `.git/`, `db.json`, `sessions/`, `.env`.
 
+## 2026-07-31 — Hapus fitur "Synced Apps" fiktif; perbaiki system prompt yang menyebut repo yang sudah dihapus/di-rename
+
+Owner melaporkan agent "masih menyimpan ingatan lama" saat ditanya
+kemampuannya — jawabannya masih menyebut interaksi dengan
+`ivansslo/roca-codex` dan `ivansslo/rocagents`, padahal repo pertama sudah
+di-rename menjadi `ivansslo/RocAgent` (repo ini sendiri) dan repo kedua
+sudah dihapus total (dikonfirmasi `404` via GitHub API). Ini **bukan**
+memori/state yang tersimpan — ini teks system prompt hardcode di
+`getServerEnvironmentContext()` (`server/orchestrator.ts`) yang disuntikkan
+ke SETIAP request LLM, jadi selalu terbaca ulang dan tidak pernah basi
+dengan sendirinya.
+
+Owner juga menanyakan apakah `roc-webui.zip`/`roc-otoweb.zip` masih
+diperlukan, mengingat source asli (`github.com/ivansslo/roc-webui`,
+`github.com/ivansslo/roc-otoweb`) sudah ada dan sudah diimplementasikan
+(roc-webui jadi basis desain pipeline "engineering" Agent Multi). Diperiksa:
+kedua .zip itu **bukan** clone repo asli — hanya `export_app_archive`
+membungkus SATU file `.md` placeholder buatan sendiri (`# Overview\n
+Documentation manifest for ...`) menjadi `.zip`, lalu `sync_external_app`
+melakukan "sync probe" yang isinya cuma `fetch(url, {method:'HEAD'})` +
+`unzip -l` pada zip buatan sendiri itu — tidak pernah benar-benar
+mengambil/menganalisis isi repo aslinya. Diputuskan: dihapus, diganti
+tautan langsung ke repo aslinya (yang sudah tercantum di berbagai tempat
+lain di codebase/dokumentasi).
+
+**Dihapus (`server/db.ts`, `server/tools.ts`, `server.ts`,
+`src/components/SyncDashboard.tsx`):**
+- Tool `get_synced_apps_status`, `sync_external_app`, `inspect_synced_app`,
+  `export_app_archive` — skema di `db.ts` dan implementasi di `tools.ts`.
+- Interface `SyncedApp`, field `syncedApps` di `DatabaseSchema`, method
+  `Database.getSyncedApps()` / `Database.updateAppStatus()`. Constructor
+  `Database` sekarang secara aktif `delete`-kan key `syncedApps` dari
+  `db.json` lama pada boot berikutnya, sehingga instalasi yang sudah
+  berjalan otomatis bersih tanpa migrasi manual.
+- Endpoint `GET /api/synced-apps` dan `POST /api/synced-apps/:id/sync`.
+- `SyncDashboard.tsx`: bagian "Workspace Synced Apps" (kartu per-app +
+  tombol "Sync" + catatan "diverifikasi langsung pada sistem" yang
+  sebenarnya tidak pernah benar-benar terjadi) dihapus total. Kartu AI
+  Provider / GitHub / Akun yang murni menampilkan data nyata dari endpoint
+  lain (`/api/models`, `/api/github/updates`) dipertahankan apa adanya.
+
+**Diperbaiki (`server/orchestrator.ts`):**
+- `OWNER_SYSTEM_PROMPT_BASE`: directive "roc-webui.zip, roc-otoweb.zip"
+  diganti "uploaded attachment" (generik, tidak menyebut app spesifik yang
+  sudah tidak relevan).
+- `getServerEnvironmentContext()`: baris "Primary Source Repositories:
+  ivansslo/roca-codex and ivansslo/rocagents" dan "Ecosystem Synced
+  Workspace Apps: roc-webui.zip / roc-otoweb.zip" diganti satu baris
+  faktual — **ivansslo/RocAgent** sebagai satu-satunya source repo, dengan
+  catatan eksplisit bahwa nama lama sudah pensiun/di-rename (supaya kalau
+  owner atau model menyebut nama lama itu lagi di masa depan, konteks ini
+  sendiri yang meluruskan, bukan mengulang klaim basi). Baris "Environment
+  Awareness" diperbarui menyebut `oci_vm`/`rootd_fs` (tool baru sesi
+  sebelumnya) alih-alih `export_app_archive` (yang baru saja dihapus).
+
+**Docs:** `docs/OCI_TAILSCALE_APERTURE_GUIDE.md` dan
+`docs/TROUBLESHOOT_IP_CHANGED_100_100_237_104.md` menandai URL
+`raw.githubusercontent.com/ivansslo/rocagents/...` sebagai basi/404
+(dikonfirmasi langsung dengan curl) alih-alih menghapusnya diam-diam,
+supaya siapa pun yang mengikuti panduan lama tahu persis kenapa perintah
+itu akan gagal.
+
+**Diverifikasi:**
+- Dicek langsung ke GitHub API: `ivansslo/rocagents` → 404 (dihapus
+  sungguhan); `ivansslo/roca-codex` → 301 redirect ke `ivansslo/RocAgent`
+  (di-rename, bukan repo terpisah).
+- `getServerEnvironmentContext()` dipanggil secara langsung (live, bukan
+  dibaca sebagai teks) setelah perubahan — output dicek tidak lagi memuat
+  `roc-webui.zip`, `roc-otoweb.zip`, `export_app_archive`, atau
+  `ivansslo/rocagents`.
+- `npx tsc --noEmit` → 0 error.
+- `npx vite build` → sukses.
+- `npm test` → 6 suite, 134 kasus, 0 gagal, tanpa regresi (jumlah kasus
+  tidak berubah dari sesi sebelumnya karena tidak ada test yang pernah
+  menguji fitur synced-apps yang dihapus ini).
+
 ## 2026-07-31 — Keamanan (cookie/session-store), README/NOTICE, tool `oci_vm` + `rootd_fs`, memori lintas-sesi Cortex Agent
 
 Empat perubahan independen dalam satu sesi:

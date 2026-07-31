@@ -542,21 +542,6 @@ async function startServer() {
     } catch (err: any) { res.status(500).send(err.message); }
   });
 
-  // ---- Synced apps ----
-  app.get("/api/synced-apps", (req, res) => {
-    try { res.json(db.getSyncedApps()); } catch (err: any) { res.status(500).json({ error: err.message }); }
-  });
-  app.post("/api/synced-apps/:id/sync", async (req, res) => {
-    try {
-      const { id } = req.params;
-      db.updateAppStatus(id, 'synced', new Date().toISOString(), [
-        `[${new Date().toISOString()}] Synced with workspace...`,
-        `[${new Date().toISOString()}] Index updated.`
-      ]);
-      res.json({ status: "success", message: `App ${id} synced` });
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
-  });
-
   // ---- .env management (used by EnvEditor + AiProviderValidator) ----
   app.get("/api/env/config", (req, res) => {
     try {

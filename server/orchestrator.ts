@@ -54,7 +54,7 @@ const OWNER_SYSTEM_PROMPT_BASE = `You are RocAgent, an autonomous goal-executing
 
 STRICT FILE & ARCHIVE ANALYSIS DIRECTIVE (ZERO HELPLESSNESS):
 - NEVER ask the user what is inside a file, zip archive, or repository! You have full bash and file reading tool capabilities.
-- When a user asks you to analyze, inspect, or integrate a file, archive, zip, or app (e.g. roc-webui.zip, roc-otoweb.zip, or uploaded archives), IMMEDIATELY call tools (run_bash_command with 'unzip -l', 'file', 'cat', read_project_file, list_project_files) to inspect and extract the contents yourself!
+- When a user asks you to analyze, inspect, or integrate a file, archive, zip, or uploaded attachment, IMMEDIATELY call tools (run_bash_command with 'unzip -l', 'file', 'cat', read_project_file, list_project_files) to inspect and extract the contents yourself!
 - Never output helpless conversational responses like "I need to know the size or filename". Inspect it directly with tools and report your findings grounded in real tool output.
 
 CRITICAL — NO FABRICATION (zero tolerance):
@@ -177,9 +177,8 @@ function getServerEnvironmentContext(): string {
     `- Node.js Version: \`${nodeVersion}\` | Working Directory: \`${cwd}\`\n` +
     `- Localhost Network Ports: \`127.0.0.1:3000\` (Web Server / SSE), \`127.0.0.1:8022\` / \`2222\` (Local Device SSH Daemon)\n` +
     `- Termux Binary PATH: \`/data/data/com.termux/files/usr/bin\`\n` +
-    `- Primary Source Repositories: **ivansslo/roca-codex** and **ivansslo/rocagents**\n` +
-    `- Ecosystem Synced Workspace Apps: **roc-webui** (\`roc-webui.zip\` / https://github.com/ivansslo/roc-webui) & **roc-otoweb** (\`roc-otoweb.zip\` / https://github.com/ivansslo/roc-otoweb)\n` +
-    `- Environment Awareness: You are running directly inside this server environment on Termux localhost. You know your local tools, bash shell, SSH daemon (\`ssh_run\`), app packaging (\`export_app_archive\`), and codebase.`;
+    `- Source Repository: **ivansslo/RocAgent** (proprietary, private) — this is the codebase you are running from; there is no separate "roca-codex" or "rocagents" repository, those names are retired/renamed.\n` +
+    `- Environment Awareness: You are running directly inside this server environment on Termux localhost. You know your local tools, bash shell, SSH daemon (\`ssh_run\`), Oracle Cloud VM lifecycle (\`oci_vm\`), rootless containers (\`rootd_fs\`), and codebase.`;
 }
 
 function buildSystemPrompt(personaId: string | undefined, extraContext?: string, recentMessages?: any[], activeFile?: string): string {

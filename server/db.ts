@@ -16,19 +16,6 @@ export interface ExecutionLog {
   result: any;
 }
 
-export interface SyncedApp {
-  id: string;
-  name: string;
-  status: 'unsynced' | 'syncing' | 'synced' | 'error';
-  lastSyncedAt?: string;
-  url: string;
-  componentsCount: number;
-  filesCount: number;
-  apiEndpointsCount: number;
-  description: string;
-  syncLogs: string[];
-}
-
 export interface ChatSession {
   id: string;
   title: string;
@@ -66,7 +53,6 @@ export interface ScheduledRoutine {
 interface DatabaseSchema {
   tools: ToolDefinition[];
   logs: ExecutionLog[];
-  syncedApps: SyncedApp[];
   chatSessions?: ChatSession[];
   memories?: MemoryItem[];
   selfCapabilities?: SelfCapability[];
@@ -172,38 +158,6 @@ const DEFAULT_SCHEMA: DatabaseSchema = {
           }
         },
         required: ["name", "description", "parameters"]
-      }
-    },
-    {
-      name: "get_synced_apps_status",
-      description: "Retrieve the current synchronization status, file counts, and configuration details.",
-      parameters: {
-        type: "object",
-        properties: {},
-        required: []
-      }
-    },
-    {
-      name: "sync_external_app",
-      description: "Trigger synchronization for an external app to fetch and index its components and files.",
-      parameters: {
-        type: "object",
-        properties: {
-          appId: { type: "string", description: "The ID of the application to sync (e.g., 'webvirtcloud')." }
-        },
-        required: ["appId"]
-      }
-    },
-    {
-      name: "inspect_synced_app",
-      description: "Inspect component names, API endpoints, or file lists of a synced application.",
-      parameters: {
-        type: "object",
-        properties: {
-          appId: { type: "string", description: "The ID of the application." },
-          inspectType: { type: "string", description: "What to inspect: 'files', 'endpoints', or 'logs'." }
-        },
-        required: ["appId", "inspectType"]
       }
     },
     {
@@ -372,44 +326,9 @@ const DEFAULT_SCHEMA: DatabaseSchema = {
         },
         required: ["subcommand"]
       }
-    },
-    {
-      name: "export_app_archive",
-      description: "Convert app documentation markdown (roc-webui.md or roc-otoweb.md) into a downloadable .zip archive for the ecosystem apps (github.com/ivansslo/roc-webui or github.com/ivansslo/roc-otoweb).",
-      parameters: {
-        type: "object",
-        properties: {
-          appId: { type: "string", description: "App ID: 'roc-webui' or 'roc-otoweb'." }
-        },
-        required: ["appId"]
-      }
     }
   ],
   logs: [],
-  syncedApps: [
-    {
-      id: "roc-webui",
-      name: "ROC Web UI",
-      status: "unsynced",
-      url: "https://github.com/ivansslo/roc-webui",
-      componentsCount: 18,
-      filesCount: 42,
-      apiEndpointsCount: 9,
-      description: "Primary web UI control panel and telemetry dashboard. Source: github.com/ivansslo/roc-webui (roc-webui.md -> roc-webui.zip).",
-      syncLogs: []
-    },
-    {
-      id: "roc-otoweb",
-      name: "ROC Oto Web",
-      status: "unsynced",
-      url: "https://github.com/ivansslo/roc-otoweb",
-      componentsCount: 12,
-      filesCount: 29,
-      apiEndpointsCount: 6,
-      description: "Autonomous fleet operations and spatial mapping hub. Source: github.com/ivansslo/roc-otoweb (roc-otoweb.md -> roc-otoweb.zip).",
-      syncLogs: []
-    }
-  ],
   chatSessions: [],
   memories: [],
   selfCapabilities: []
@@ -455,16 +374,13 @@ class Database {
           this.data.tools = [...DEFAULT_SCHEMA.tools, ...userExtras];
         }
 
-        // Ensure default syncedApps are present
-        if (!this.data.syncedApps) {
-          this.data.syncedApps = [];
-        }
-        const existingAppIds = new Set(this.data.syncedApps.map(a => a.id));
-        DEFAULT_SCHEMA.syncedApps.forEach(defaultApp => {
-          if (!existingAppIds.has(defaultApp.id)) {
-            this.data.syncedApps.push(defaultApp);
-          }
-        });
+        // Drop the retired "synced apps" feature (get_synced_apps_status / sync_external_app /
+        // inspect_synced_app / export_app_archive) from any existing db.json — it fabricated
+        // "sync" probes against roc-webui/roc-otoweb and packaged local .md files into .zip
+        // archives that duplicated, rather than reflected, the real upstream repositories.
+        // Removing the stale key here means an existing installation's db.json is cleaned up
+        // automatically on next boot, without a separate migration step.
+        delete (this.data as any).syncedApps;
 
         this.save();
       } catch {
@@ -511,23 +427,6 @@ class Database {
 
   getLogs() {
     return this.data.logs;
-  }
-
-  getSyncedApps() {
-    return this.data.syncedApps || [];
-  }
-
-  updateAppStatus(id: string, status: 'unsynced' | 'syncing' | 'synced' | 'error', lastSyncedAt?: string, syncLogs?: string[]) {
-    if (!this.data.syncedApps) {
-      this.data.syncedApps = DEFAULT_SCHEMA.syncedApps;
-    }
-    const app = this.data.syncedApps.find(a => a.id === id);
-    if (app) {
-      app.status = status;
-      if (lastSyncedAt) app.lastSyncedAt = lastSyncedAt;
-      if (syncLogs) app.syncLogs = syncLogs;
-      this.save();
-    }
   }
 
   getChatSessions(): ChatSession[] {
