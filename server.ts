@@ -111,6 +111,7 @@ async function startServer() {
       openai: !!(process.env.OPENAI_API_KEY || process.env.OPENAI_KEY),
       openrouter: !!(process.env.OPENROUTER_API_KEY || process.env.OR_KEY || process.env.OPENROUTER_KEY || process.env.DEEPSEK_API_KEY),
       cfai: !!(process.env.CF_AI_TOKEN || process.env.CF_TOKEN),
+      cfsherlock: !!(process.env.CF_SHERLOCK_KEY || process.env.CLOUDFERRO_SHERLOCK_API_KEY || process.env.CLOUDFERRO_KEY),
     } as Record<string, boolean>;
 
     const catalog = [
@@ -121,7 +122,9 @@ async function startServer() {
       { id: "gpt-4o", name: "OpenAI GPT-4o", provider: "openai", icon: "🟢" },
       { id: "gpt-4o-mini", name: "OpenAI GPT-4o mini", provider: "openai", icon: "🟢" },
       { id: "deepseek/deepseek-r1", name: "OpenRouter DeepSeek R1", provider: "openrouter", icon: "🌐" },
-      { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", name: "Cloudflare Llama 3.3", provider: "cfai", icon: "☁️" }
+      { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", name: "Cloudflare Llama 3.3", provider: "cfai", icon: "☁️" },
+      { id: "MiniMaxAI/MiniMax-M2.5", name: "CloudFerro Sherlock MiniMax M2.5", provider: "cfsherlock", icon: "🇵🇱" },
+      { id: "meta-llama/Llama-3.3-70B-Instruct", name: "CloudFerro Sherlock Llama 3.3 70B", provider: "cfsherlock", icon: "🇵🇱" }
     ];
 
     const models = catalog.map(m => ({
@@ -137,6 +140,7 @@ async function startServer() {
       xgoog: "gemini", google: "gemini", googleai: "gemini",
       deepseek: "openrouter", deepsek: "openrouter",
       cf: "cfai", cloudflare: "cfai",
+      sherlock: "cfsherlock", cloudferro: "cfsherlock",
     };
     const wanted = (process.env.PROVIDER || "")
       .toLowerCase().split(",").map(x => ALIAS[x.trim()] || x.trim()).filter(Boolean);
@@ -144,7 +148,7 @@ async function startServer() {
     const activeProvider =
       wanted.find(p => have[p]) ||
       (have.gemini ? "gemini" : have.openai ? "openai" : have.groq ? "groq" :
-       have.openrouter ? "openrouter" : have.cfai ? "cfai" : "gemini");
+       have.openrouter ? "openrouter" : have.cfai ? "cfai" : have.cfsherlock ? "cfsherlock" : "gemini");
 
     res.json({
       active_provider: activeProvider,

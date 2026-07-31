@@ -3,6 +3,59 @@
 > Snapshot hasil refactor. Berisi proyek lengkap (sudah termasuk semua perubahan).
 > Tidak menyertakan: `node_modules/`, `dist/`, `.git/`, `db.json`, `sessions/`, `.env`.
 
+## 2026-08-01 — Provider baru: CloudFerro Sherlock
+
+Diprakarsai investigasi log kegagalan orchestrator owner: dalam satu malam
+Cloudflare AI (kuota harian habis), Gemini (kuota 429), Groq (`gpt-oss-120b`
+mengalami bug intermiten yang sudah dikenal komunitas — kadang balasan
+kosong setelah tool call), OpenRouter (`User not found`, indikasi kunci
+bermasalah), dan OpenAI (kredit habis) gagal berurutan pada request yang
+sama, sehingga percakapan jatuh ke fallback jujur "tidak ada provider yang
+merespons". Investigasi mendalam (bukan asumsi) menunjukkan seluruh
+kegagalan itu nyata di sisi masing-masing akun/provider, bukan bug logika
+orchestrator — tapi menambah provider independen baru tetap mengurangi
+peluang seluruh rantai gagal bersamaan.
+
+**`server/orchestrator.ts`**: `callCloudFerro()` — provider baru memakai
+endpoint OpenAI-compatible CloudFerro Sherlock
+(`https://api-sherlock.cloudferro.com/openai/v1`, GPU cloud yang dihosting
+di Polandia). Didaftarkan sebagai `cfsherlock` di `DEFAULT_MODEL`
+(default `MiniMaxAI/MiniMax-M2.5`), `PROVIDER_ALIAS` (`sherlock`,
+`cloudferro`), rantai `providersToTry`, dan guard kredensial
+(`CF_SHERLOCK_KEY`/`CLOUDFERRO_SHERLOCK_API_KEY`/`CLOUDFERRO_KEY`).
+`callTurboFallback()` (pesan diagnostik akhir) ikut menyebutkan CloudFerro
+Sherlock kalau kuncinya terisi.
+
+**`server.ts`**: `/api/models` menambahkan `cfsherlock` ke availability
+check dan dua entri katalog (`MiniMaxAI/MiniMax-M2.5`,
+`meta-llama/Llama-3.3-70B-Instruct`) supaya muncul di dropdown model UI.
+
+**`docs/app.env.template`, `docs/ENV_KEYS_LIST.md`, `README.md`**:
+didokumentasikan `CF_SHERLOCK_KEY` dan alias provider baru.
+
+Diverifikasi live secara menyeluruh sebelum menulis kode integrasi (bukan
+menebak format API dari dokumentasi saja):
+- `GET /openai/v1/models` dengan kunci asli owner → HTTP 200, daftar 5+
+  model chat (`meta-llama/Llama-3.3-70B-Instruct`, `MiniMaxAI/MiniMax-M2.5`,
+  `openai/gpt-oss-120b`, `speakleash/Bielik-11B-v3.0-Instruct`, dst).
+- `POST /openai/v1/chat/completions` tanpa tool → HTTP 200, balasan normal.
+- `POST /openai/v1/chat/completions` DENGAN tool (skema
+  `list_project_files` asli) → `finish_reason: "tool_calls"`, format
+  identik OpenAI/Groq, untuk `Llama-3.3-70B-Instruct` maupun
+  `gpt-oss-120b` (yang terakhir juga mengembalikan field `reasoning`
+  terpisah dari `content`, sama seperti versi Groq-nya — tapi `content`
+  tetap terisi normal, bukan kosong).
+- **End-to-end lewat `runOrchestrator()` asli** (bukan mock): dengan
+  `PROVIDER=cfsherlock`, orchestrator memilih provider ini, memanggil tool
+  `list_project_files` **sungguhan** (bukan stub) dua kali dalam satu
+  giliran tool-loop, membaca daftar file asli repo, dan menghasilkan
+  jawaban akhir koheren berdasarkan hasil tool tersebut.
+
+Verifikasi kode:
+- `npx tsc --noEmit` → 0 error.
+- `npx vite build` → sukses.
+- `npm test` → 6 suite, 134 kasus, 0 gagal, tanpa regresi.
+
 ## 2026-08-01 — Fix nama bentrok `oci` vs CLI Oracle; hapus referensi endpoint Ollama/Tailscale yang sudah dihapus
 
 **1. `tools/bashrc-helpers.sh` / `tools/install-bashrc-helpers.sh`: `oci()` → `oci_vm()`.**

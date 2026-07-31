@@ -861,6 +861,102 @@ async function callRoadQwen(messages: any[], modelName: string, executionLogs: a
   throw new Error("All RoadQwen Cloud endpoints failed");
 }
 
+// 7. CloudFerro Sherlock Provider — OpenAI-compatible endpoint hosted in Poland (GPU cloud).
+// Docs: https://docs.sherlock.cloudferro.com/ — base URL and model catalog confirmed live via
+// GET https://api-sherlock.cloudferro.com/openai/v1/models on 2026-08-01. Tool-calling verified
+// live with both meta-llama/Llama-3.3-70B-Instruct and openai/gpt-oss-120b (both return a normal
+// OpenAI-shaped tool_calls response). gpt-oss-120b here also returns a `reasoning` field
+// alongside `content`, same as Groq's gpt-oss-120b, but `content` itself is populated normally.
+async function callCloudFerro(messages: any[], modelName: string, executionLogs: any[], onProgress?: Function, activeFile?: string) {
+  const cfKey = process.env.CF_SHERLOCK_KEY || process.env.CLOUDFERRO_SHERLOCK_API_KEY || process.env.CLOUDFERRO_KEY;
+  if (!cfKey) throw new Error("CF_SHERLOCK_KEY environment variable missing");
+
+  const model = modelName || "MiniMaxAI/MiniMax-M2.5";
+  const baseUrl = "https://api-sherlock.cloudferro.com/openai/v1";
+  const tools = getOpenAiTools();
+  const reqMessages = [
+    { role: "system", content: buildSystemPrompt(ACTIVE_PERSONA_ID, undefined, messages, activeFile) },
+    ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
+  ];
+
+  onProgress?.({ type: 'status', data: { message: `Connecting to CloudFerro Sherlock (${model})...` } });
+
+  let resp = await robustFetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${cfKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      messages: reqMessages,
+      tools,
+      tool_choice: "auto",
+      temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
+    })
+  });
+
+  let data = await resp.json();
+  if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+
+  let turn = 0;
+  while (data.choices && data.choices[0]?.message?.tool_calls && turn < MAX_TOOL_TURNS) {
+    turn++;
+    const assistantMsg = data.choices[0].message;
+    if (!assistantMsg.content) assistantMsg.content = "";
+    const toolCalls = assistantMsg.tool_calls;
+    reqMessages.push(assistantMsg);
+
+    const toolPromises = toolCalls.map(async (call: any) => {
+      const toolName = call.function.name;
+      let toolArgs = {};
+      try { toolArgs = JSON.parse(call.function.arguments || "{}"); } catch (_) {}
+
+      safeConsoleLog(`[CloudFerro Tool] Calling Parallel: ${toolName}`, toolArgs);
+      onProgress?.({ type: 'tool_start', data: { toolName, toolArgs } });
+
+      const result = await executeTool(toolName, toolArgs, onProgress as any);
+
+      db.addLog({ timestamp: new Date().toISOString(), toolName, args: toolArgs, result });
+      executionLogs.push({ toolName, args: toolArgs, result });
+      onProgress?.({ type: 'tool_result', data: { toolName, result } });
+
+      return {
+        role: "tool",
+        tool_call_id: call.id,
+        content: JSON.stringify(result)
+      };
+    });
+
+    const toolResponses = await Promise.all(toolPromises);
+    reqMessages.push(...(toolResponses as any));
+
+    resp = await robustFetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${cfKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        messages: reqMessages,
+        tools,
+        tool_choice: "auto",
+        temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
+      })
+    });
+
+    data = await resp.json();
+  }
+
+  const responseText = data.choices && data.choices[0]?.message?.content ? data.choices[0].message.content : "";
+  if (!responseText || !responseText.trim()) {
+    throw new Error("Provider returned empty response content");
+  }
+  onProgress?.({ type: 'chunk', data: { text: responseText } });
+  return { text: responseText, logs: executionLogs };
+}
+
 // Honest last-resort fallback — by the time we get here, every provider in the failover chain
 // already failed, so there is nothing real to retry. Tell the user the truth instead of faking success.
 async function callTurboFallback(_messages: any[], executionLogs: any[], onProgress?: Function, failureReasons: string[] = []) {
@@ -869,6 +965,7 @@ async function callTurboFallback(_messages: any[], executionLogs: any[], onProgr
   if (process.env.GROQ_KEY || process.env.GROQ_API_KEY) configured.push("Groq");
   if (process.env.OPENROUTER_API_KEY || process.env.OR_KEY) configured.push("OpenRouter");
   if (process.env.OPENAI_API_KEY || process.env.OPENAI_KEY) configured.push("OpenAI");
+  if (process.env.CF_SHERLOCK_KEY || process.env.CLOUDFERRO_SHERLOCK_API_KEY || process.env.CLOUDFERRO_KEY) configured.push("CloudFerro Sherlock");
 
   // Laporkan penyebab yang SEBENARNYA. Versi lama selalu menyatakan
   // "semua mengalami 429 Rate Limit", padahal kegagalan paling umum adalah
@@ -924,6 +1021,7 @@ export async function runOrchestrator
     cfai: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     oci: "qwen2.5:7b",
     roadqwen: "qwen3.6-plus",
+    cfsherlock: "MiniMaxAI/MiniMax-M2.5",
   };
   const model = rawModel && rawModel !== "gemini-3.6-flash"
     ? rawModel
@@ -949,6 +1047,7 @@ export async function runOrchestrator
     deepseek: "openrouter", deepsek: "openrouter",
     cf: "cfai", cloudflare: "cfai",
     ollama: "oci",
+    sherlock: "cfsherlock", cloudferro: "cfsherlock",
   };
   const norm = (n: string) => PROVIDER_ALIAS[n] || n;
 
@@ -962,7 +1061,8 @@ export async function runOrchestrator
     { name: "groq", model: "openai/gpt-oss-120b" },
     { name: "openrouter", model: "google/gemini-2.0-flash-001" },
     { name: "openai", model: "gpt-4o-mini" },
-    { name: "cfai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" }
+    { name: "cfai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
+    { name: "cfsherlock", model: "MiniMaxAI/MiniMax-M2.5" }
   ];
 
   const tried = new Set<string>();
@@ -997,6 +1097,7 @@ export async function runOrchestrator
     if (p.name === "openrouter" && !hasOpenRouter) continue;
     if ((p.name === "cfai" || p.name === "cf") && !(process.env.CF_AI_TOKEN || process.env.CF_TOKEN)) continue;
     if ((p.name === "roadqwen" || p.name === "qwen" || p.name === "qwen-cloud") && !(process.env.ROADQWEN_KEY || process.env.QWEN_KEY || process.env.DASHSCOPE_API_KEY)) continue;
+    if (p.name === "cfsherlock" && !(process.env.CF_SHERLOCK_KEY || process.env.CLOUDFERRO_SHERLOCK_API_KEY || process.env.CLOUDFERRO_KEY)) continue;
 
     try {
       safeConsoleLog(`[Orchestrator] Attempting provider: ${p.name} (${p.model})`);
@@ -1015,6 +1116,8 @@ export async function runOrchestrator
         result = await callRoadQwen(messages, p.model, executionLogs, onProgress, options.activeFile);
       } else if (p.name === "oci" || p.name === "ollama") {
         result = await callOciModel(messages, p.model, executionLogs, onProgress, options.activeFile);
+      } else if (p.name === "cfsherlock") {
+        result = await callCloudFerro(messages, p.model, executionLogs, onProgress, options.activeFile);
       }
 
       return result;

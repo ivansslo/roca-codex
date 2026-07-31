@@ -165,10 +165,11 @@ becomes active; the rest form the failover order. Entries without a key are
 skipped, so listing more than you have configured is safe.
 
 ```
-PROVIDER=groq,gemini,openai,openrouter,cfai
+PROVIDER=groq,gemini,openai,openrouter,cfai,cfsherlock
 ```
 
-Aliases: `xgoog`/`google` → gemini, `deepseek` → openrouter, `cf` → cfai.
+Aliases: `xgoog`/`google` → gemini, `deepseek` → openrouter, `cf` → cfai,
+`sherlock`/`cloudferro` → cfsherlock.
 
 On the VM: `rocagent-vm pull && rocagent-vm setup-tools`
 
