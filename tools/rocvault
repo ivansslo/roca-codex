@@ -223,6 +223,18 @@ cmd_check() {
 cmd_edit() {
   local enc="${1:-}"
   [ -n "$enc" ] || die "Sebutkan berkas"
+
+  # Nano tidak selalu terpasang (Termux minimal, banyak container Linux
+  # ramping). Tanpa cek ini, kegagalan muncul sebagai 'nano: command not
+  # found' mentah dari bash (exit 127) SETELAH vault sudah didekripsi ke
+  # tmpfs -- membingungkan dan bisa membuat pengguna mengira vault rusak.
+  local editor="${EDITOR:-nano}"
+  command -v "$editor" >/dev/null 2>&1 || die "Editor '$editor' tidak ditemukan.
+  Pasang salah satu, atau set EDITOR ke yang sudah ada:
+    Termux:  pkg install nano   (atau: export EDITOR=vi)
+    Debian:  sudo apt install nano
+  Lalu ulangi: rocvault edit $enc"
+
   local pass; pass=$(read_pass "Passphrase: ")
   local dir tmp
   # Utamakan tmpfs supaya plaintext tidak pernah menyentuh disk permanen.
@@ -234,7 +246,7 @@ cmd_edit() {
 
   vault_open "$enc" "$pass" > "$tmp"
   local before; before=$(sha256sum < "$tmp")
-  "${EDITOR:-nano}" "$tmp"
+  "$editor" "$tmp"
   local after; after=$(sha256sum < "$tmp")
   if [ "$before" = "$after" ]; then ok "Tidak ada perubahan"; return 0; fi
 
