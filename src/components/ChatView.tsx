@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bot, ChevronDown } from 'lucide-react';
+import { Bot, ChevronDown, X } from 'lucide-react';
 import { Message } from '../types';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
@@ -56,12 +56,16 @@ export function ChatView({
 
         {terminalOpen && (
           <div className="border-t border-theme-border bg-neutral-950 p-2.5 sm:p-3 max-h-44 overflow-hidden flex flex-col justify-between">
-            <div className="mb-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-xs text-emerald-400 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="font-bold font-mono text-[10px] uppercase tracking-wider">Console (Thinking & Execution Log)</span>
-              </div>
-              <button onClick={() => setTerminalOpen(false)} className="text-neutral-400 hover:text-white text-[10px] font-mono cursor-pointer">Hide</button>
+            <div className="mb-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-center justify-between">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <button
+                type="button"
+                onClick={() => setTerminalOpen(false)}
+                className="p-1 text-neutral-400 hover:text-white rounded transition-colors cursor-pointer"
+                title="Sembunyikan console"
+              >
+                <X size={13} />
+              </button>
             </div>
             <div className="max-h-28 overflow-y-auto">
               <LiveTerminal isLoading={isLoading} logs={activeExecutionLogs} />

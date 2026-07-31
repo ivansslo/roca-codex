@@ -273,8 +273,7 @@ function ExecutionCard({ log }: { log: any }) {
             </>
           ) : (
             <>
-              <Wrench size={13} className="text-indigo-400" />
-              <span className="font-bold text-slate-200">{log.toolName}</span>
+              <Wrench size={13} className="text-indigo-400 flex-shrink-0" />
             </>
           )}
         </div>
@@ -361,7 +360,7 @@ function ExecutionLogsGroup({ logs }: { logs: any[] }) {
         </div>
       )}
 
-      {/* Group summary toggle for all tool activity */}
+      {/* Group summary toggle for all tool activity — icon + count + chevron only */}
       {groups.filter(g => g.key !== 'bash' || bashLogs.length === 0).length > 0 && (
         <button
           type="button"
@@ -372,9 +371,9 @@ function ExecutionLogsGroup({ logs }: { logs: any[] }) {
           <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-indigo-500/15 border border-indigo-500/25 flex-shrink-0">
             <Wrench size={13} className={shown ? "text-indigo-300" : "text-slate-400"} />
           </span>
-          <span className="font-bold text-slate-100">{total} tool{total > 1 ? 's' : ''} dijalankan</span>
-          <span className={`ml-auto flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider flex-shrink-0 ${shown ? 'text-indigo-300' : 'text-slate-500'}`}>
-            {shown ? (<><ChevronUp size={12} /> Sembunyikan</>) : (<><ChevronDown size={12} /> Tampilkan</>)}
+          <span className="text-[11px] font-bold text-slate-200">{total}</span>
+          <span className={`ml-auto flex items-center flex-shrink-0 ${shown ? 'text-indigo-300' : 'text-slate-500'}`}>
+            {shown ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </span>
         </button>
       )}
@@ -395,7 +394,6 @@ function ExecutionLogsGroup({ logs }: { logs: any[] }) {
                     <span className="font-bold text-slate-100">{g.label}</span>
                     <span className="text-[10px] text-slate-500">{g.logs.length}</span>
                   </div>
-                  <span className="text-[10px] text-slate-500">{open ? 'Sembunyikan' : 'Tampilkan'}</span>
                 </div>
                 {open && (
                   <div className="p-2 space-y-2 bg-slate-950 border-t border-slate-800/60">
@@ -538,7 +536,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
                     return match ? (
                       <CodeBlock language={match[1]} value={String(children).replace(/\n$/, '')} />
                     ) : (
-                      <code className="bg-slate-800/50 text-indigo-300 font-mono text-[11px] px-1.5 py-0.5 rounded border border-slate-700/30 font-medium" {...props}>
+                      <code className="bg-slate-800 text-indigo-200 font-mono text-[11px] px-1.5 py-0.5 rounded border border-slate-600/60 font-semibold" {...props}>
                         {children}
                       </code>
                     );
