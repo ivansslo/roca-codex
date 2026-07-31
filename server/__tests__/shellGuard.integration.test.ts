@@ -4,6 +4,8 @@ import { checkCommand, auditLine, resolveMode } from '../commandGuard';
 import { exec } from 'child_process';
 import util from 'util';
 import fs from 'fs';
+import os from 'os';
+import path from 'path';
 const realExec = util.promisify(exec);
 
 let execCalls: string[] = [];
@@ -25,7 +27,12 @@ async function runBash(cmd: string) {
 
 (async () => {
   let pass=0, fail=0;
-  const canary = '/tmp/rocagent-guard-canary.txt';
+  // os.tmpdir() dan bukan '/tmp' literal — di Termux/Android tidak ada '/tmp'
+  // sama sekali (sandboxed OS), tmp sebenarnya ada di $PREFIX/tmp yang hanya
+  // ditemukan lewat TMPDIR/os.tmpdir(). Path hardcode di sini pernah membuat
+  // fs.writeFileSync gagal ENOENT karena direktori induknya tidak eksis.
+  const tmpDir = os.tmpdir();
+  const canary = path.join(tmpDir, 'rocagent-guard-canary.txt');
   fs.writeFileSync(canary, 'jangan hilang');
 
   console.log('\n-- berbahaya: harus diblokir DAN tidak menyentuh execAsync --');
@@ -42,7 +49,7 @@ async function runBash(cmd: string) {
   console.log(`  ${canaryAlive?'✓':'✗'} file canary masih ada setelah semua percobaan rm`);
 
   console.log('\n-- normal: harus benar-benar JALAN --');
-  for (const good of ['echo halo-dari-guard', 'ls /tmp', 'git --version']) {
+  for (const good of ['echo halo-dari-guard', `ls ${tmpDir}`, 'git --version']) {
     execCalls = [];
     const r: any = await runBash(good);
     const ok = r.status === 'success' && execCalls.length === 1;
@@ -57,6 +64,10 @@ async function runBash(cmd: string) {
   const wok = w.status==='success';
   wok?pass++:fail++;
   console.log(`  ${wok?'✓':'✗'} mode warn tetap mengeksekusi perintah normal`);
+
+  // Bersihkan canary — sebelumnya file ini sengaja ditinggal di /tmp setiap
+  // kali test dijalankan.
+  try { fs.unlinkSync(canary); } catch {}
 
   console.log(`\n${pass} lulus, ${fail} gagal`);
   process.exit(fail?1:0);
