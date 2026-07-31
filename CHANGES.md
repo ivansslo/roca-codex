@@ -3,6 +3,36 @@
 > Snapshot hasil refactor. Berisi proyek lengkap (sudah termasuk semua perubahan).
 > Tidak menyertakan: `node_modules/`, `dist/`, `.git/`, `db.json`, `sessions/`, `.env`.
 
+## 2026-07-31 — UI: query_snowflake_insight tidak punya kartu tampilan sendiri
+
+Owner bertanya kenapa "RocAgentInsight" tidak muncul di dropdown pilihan
+model, dan merasa integrasi Snowflake "cuma jalan di log". Jawaban soal
+dropdown: itu memang benar dan disengaja — RocAgentInsight adalah *tool*
+yang dipanggil model chat yang sedang aktif, bukan model chat itu sendiri,
+jadi tidak akan pernah ada di daftar model (Gemini/Groq/OpenAI/dst).
+
+Tapi bagian "cuma jalan di log" itu menunjukkan bug UI nyata: tool
+`query_snowflake_insight` (ditambahkan sesi sebelumnya) tidak pernah
+didaftarkan ke pengelompokan visual `ExecutionLogsGroup` di
+`ChatMessage.tsx`, sehingga jatuh ke kategori generik "Other Tools" dan
+menampilkan JSON mentah — termasuk `raw_response` yang bisa sampai 12KB
+dump SSE mentah dari Cortex Agent.
+
+- **`src/components/ChatMessage.tsx`**:
+  - `query_snowflake_insight` sekarang dikelompokkan sendiri ("Snowflake
+    Insight", ikon Database biru) di `ExecutionLogsGroup`, bukan lagi jatuh
+    ke "Other Tools".
+  - `SnowflakeInsightCard` (baru) — kartu khusus yang menampilkan
+    pertanyaan asli, jawaban bersih (`result.answer`), dan tool internal
+    Cortex Agent yang dipakai (`result.tools_used`, mis.
+    `rocagent_ops_analyst, system_execute_sql`) — TIDAK PERNAH menampilkan
+    `raw_response` mentah ke pengguna.
+
+Verifikasi di sandbox:
+- `tsc --noEmit` → EXIT 0
+- `npm test` (114 kasus) → semua lulus, nol regresi
+- `npm run build` → sukses
+
 ## 2026-07-31 — Fix: query_snowflake_insight mengembalikan jawaban terduplikasi
 
 Owner melaporkan Cortex Agent "tidak berjalan" — investigasi lapangan (bukan

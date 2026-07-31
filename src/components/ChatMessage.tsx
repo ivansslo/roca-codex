@@ -3,7 +3,7 @@ import Markdown from 'react-markdown';
 import { Message } from '../types';
 import {
   Bot, User, FileText, Sparkles, Copy,
-  Terminal, Check, ChevronDown, ChevronRight, FileCode, ChevronUp, Download, CheckCircle2, XCircle, Eye, EyeOff, RefreshCw, Globe, Wrench, Search
+  Terminal, Check, ChevronDown, ChevronRight, FileCode, ChevronUp, Download, CheckCircle2, XCircle, Eye, EyeOff, RefreshCw, Globe, Wrench, Search, Database
 } from 'lucide-react';
 
 interface ChatMessageProps {
@@ -232,6 +232,64 @@ function FileDiffCard({ filename, content }: { filename: string; content: string
   );
 }
 
+// Snowflake Cortex Agent (RocAgentInsight) result card — shows the clean
+// answer + which internal Cortex tools were used, never the raw SSE dump
+// (log.result.raw_response can be up to 12KB of event:/data: frames).
+function SnowflakeInsightCard({ log }: { log: any }) {
+  const [expanded, setExpanded] = useState(true);
+  const question = log.args?.question || '';
+  const isError = log.result?.status === 'error';
+  const answer = log.result?.answer || log.result?.message || '';
+  const toolsUsed: string[] = Array.isArray(log.result?.tools_used) ? log.result.tools_used : [];
+  const agentName = log.result?.agent || 'RocAgentInsight';
+  const durationStr = formatDuration(log.timeMs);
+
+  return (
+    <div className="space-y-1.5 font-mono text-xs select-none">
+      <div
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center justify-between py-1.5 px-2.5 bg-slate-900/60 hover:bg-slate-900 border border-slate-800/80 rounded-lg text-slate-300 text-xs cursor-pointer select-none transition-colors"
+      >
+        <div className="flex items-center gap-2 truncate pr-2">
+          <Database size={13} className="text-blue-400 flex-shrink-0" />
+          <span className="text-slate-400">Snowflake</span>
+          <span className="font-mono text-[12px] font-bold text-slate-50 truncate">{agentName}</span>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {isError ? (
+            <XCircle size={13} className="text-red-400 font-bold" />
+          ) : (
+            <CheckCircle2 size={13} className="text-emerald-400 font-bold" />
+          )}
+          <span className="text-[10px] text-slate-500">{durationStr}</span>
+          <ChevronDown size={12} className={`text-slate-500 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="pl-2 space-y-2 border-l-2 border-slate-800/80 my-1">
+          <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950 font-mono text-xs my-2">
+            {question && (
+              <div className="px-3 py-2 border-b border-slate-800/80 text-[11px] text-slate-400">
+                <span className="text-blue-400 font-bold">Q: </span>{question}
+              </div>
+            )}
+            <div className={`flex items-center justify-between px-3 py-1.5 bg-slate-900/80 border-b border-slate-800 text-[10px] font-bold uppercase tracking-wider ${isError ? 'text-red-300' : 'text-blue-300'}`}>
+              <span>{isError ? 'ERROR' : 'ANSWER'}</span>
+              {toolsUsed.length > 0 && (
+                <span className="text-[9px] normal-case font-normal text-slate-500">via {toolsUsed.join(', ')}</span>
+              )}
+            </div>
+            <pre className="p-3 text-[11px] text-slate-200 overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-64">
+              {answer || '(tidak ada jawaban)'}
+            </pre>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Single Execution Tool Card
 function ExecutionCard({ log }: { log: any }) {
   const [expanded, setExpanded] = useState(true);
@@ -239,9 +297,14 @@ function ExecutionCard({ log }: { log: any }) {
   const isWriteFile = log.toolName === 'write_project_file' || log.toolName === 'create_file';
   const isReadFile = log.toolName === 'read_project_file' || log.toolName === 'read_file';
   const isBash = log.toolName === 'run_bash_command' || log.toolName === 'shell';
+  const isSnowflake = log.toolName === 'query_snowflake_insight';
 
   if (isBash) {
     return <BashExecutionCard log={log} />;
+  }
+
+  if (isSnowflake) {
+    return <SnowflakeInsightCard log={log} />;
   }
 
   const filename = log.args?.filename || log.args?.path || 'file';
@@ -333,7 +396,8 @@ function ExecutionLogsGroup({ logs }: { logs: any[] }) {
   const webLogs = has('web_searching_module');
   const httpLogs = has('http_request');
   const modelLogs = has('ask_model');
-  const used = new Set([...readLogs, ...editLogs, ...bashLogs, ...searchLogs, ...webLogs, ...httpLogs, ...modelLogs]);
+  const snowflakeLogs = has('query_snowflake_insight');
+  const used = new Set([...readLogs, ...editLogs, ...bashLogs, ...searchLogs, ...webLogs, ...httpLogs, ...modelLogs, ...snowflakeLogs]);
   const otherLogs = logs.filter(l => !used.has(l));
 
   const groups = [
@@ -344,6 +408,7 @@ function ExecutionLogsGroup({ logs }: { logs: any[] }) {
     { key: 'web', label: 'Web Search', Icon: Globe, color: 'text-cyan-400', logs: webLogs },
     { key: 'http', label: 'HTTP Requests', Icon: Globe, color: 'text-fuchsia-400', logs: httpLogs },
     { key: 'model', label: 'Model Cascading', Icon: Sparkles, color: 'text-purple-400', logs: modelLogs },
+    { key: 'snowflake', label: 'Snowflake Insight', Icon: Database, color: 'text-blue-400', logs: snowflakeLogs },
     { key: 'other', label: 'Other Tools', Icon: FileCode, color: 'text-slate-400', logs: otherLogs },
   ].filter(g => g.logs.length > 0);
 
