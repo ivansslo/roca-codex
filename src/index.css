@@ -1,6 +1,19 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* RocAgent has its own theme toggle (`.theme-dark` / `.theme-light` / `.theme-high-contrast`
+ * on <html>, set in App.tsx), it does NOT rely on the OS `prefers-color-scheme` media query.
+ * Tailwind's built-in `dark:` variant defaults to `@media (prefers-color-scheme: dark)`, which
+ * is unrelated to our theme class. That mismatch made `dark:prose-invert` in ChatMessage.tsx /
+ * AgentOrchestraTab.tsx only activate when the OS/browser itself reports a dark preference —
+ * on a device reporting light preference (independent of RocAgent's own dark theme), the
+ * Typography plugin's *light*-mode heading/strong colors (near-black) were used on top of
+ * RocAgent's dark background, making bold text unreadable. Re-point `dark:` at our own class
+ * instead: everything outside `.theme-light` (i.e. `theme-dark` and `theme-high-contrast`,
+ * both of which use the dark color palette defined in :root) is treated as "dark".
+ */
+@custom-variant dark (&:not(.theme-light, .theme-light *));
+
 @theme {
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   

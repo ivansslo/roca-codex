@@ -226,7 +226,7 @@ export function AgentOrchestraTab({ selectedModel, selectedProvider, persona }: 
           <h3 className="text-sm font-semibold text-theme-text-primary mb-2 flex items-center gap-2">
             <Bot className="w-4 h-4 text-emerald-500" /> {ROLE_TITLE[lastRole]} — Hasil Akhir
           </h3>
-          <div className="prose prose-sm prose-invert max-w-none text-theme-text-primary">
+          <div className="prose prose-sm dark:prose-invert max-w-none text-theme-text-primary">
             <Markdown>{finalStep.thoughts}</Markdown>
           </div>
         </div>
