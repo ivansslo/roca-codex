@@ -131,11 +131,22 @@ function isCriticalTarget(p: string): boolean {
  */
 // Matches the credential path anywhere in a token, so an absolute prefix such as
 // /home/user/.oci/ is caught too (an earlier version anchored on whitespace and missed it).
+//
+// Browser cookie/session-store files are included here too (found 2026-07-31: reading
+// them was previously allowed outright). These files hold live session cookies and
+// saved passwords for whatever sites the user is logged into on that device — reading
+// them and feeding the content to an LLM is exactly as dangerous as reading an SSH key
+// or a cloud credentials file, so they get the same treatment. Covers:
+//   - Chromium-family desktop profiles (Chrome/Chromium/Edge/Brave/Opera/Vivaldi) on
+//     Linux/Termux (~/.config/<browser>/<Profile>/Cookies, "Login Data", "Web Data")
+//     and on Android app-private storage (/data/data/<package>/app_chrome/...).
+//   - Firefox/Firefox-based profiles (cookies.sqlite, logins.json, key4.db/key3.db).
+//   - macOS Chromium/Firefox profile locations under "Library/Application Support".
 const SENSITIVE_PATH_RE =
-  /(\.ssh\/(id_|identity)|\.oci\/|\.aws\/credentials|\.config\/gh\/|\.netrc|\.git-credentials|\/etc\/shadow|\/etc\/sudoers|\.pem$|_rsa$|_ed25519$)/;
+  /(\.ssh\/(id_|identity)|\.oci\/|\.aws\/credentials|\.config\/gh\/|\.netrc|\.git-credentials|\/etc\/shadow|\/etc\/sudoers|\.pem$|_rsa$|_ed25519$|(^|\/)cookies\.sqlite$|(^|\/)(logins\.json|key4\.db|key3\.db)$|(^|\/)(Cookies|Login Data|Web Data)$|com\.(android|google)\.chrome|org\.mozilla\.firefox|com\.brave\.browser|com\.microsoft\.emmx|com\.opera\.browser)/;
 
 /** Commands that read file contents, used to decide if a sensitive path is being exfiltrated. */
-const READERS = new Set(['cat', 'less', 'more', 'head', 'tail', 'strings', 'xxd', 'od', 'base64', 'cp', 'scp', 'nc', 'ncat']);
+const READERS = new Set(['cat', 'less', 'more', 'head', 'tail', 'strings', 'xxd', 'od', 'base64', 'cp', 'scp', 'nc', 'ncat', 'sqlite3']);
 
 interface Segment {
   /** Raw text of this command segment. */
