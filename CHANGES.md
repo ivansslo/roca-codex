@@ -3,6 +3,31 @@
 > Snapshot hasil refactor. Berisi proyek lengkap (sudah termasuk semua perubahan).
 > Tidak menyertakan: `node_modules/`, `dist/`, `.git/`, `db.json`, `sessions/`, `.env`.
 
+## 2026-07-31 — UI: perkuat branding kartu Snowflake Cortex Agent (hackathon demo)
+
+Owner sedang ikut Snowflake CoCo CLI Hackathon 2026 (Hack2Skill) dan ingin
+RocAgentInsight "muncul sebagai dirinya" secara visual — bukan cuma detail
+teknis kecil di antara tool lain — supaya jelas terlihat sebagai showcase
+Cortex Agent nyata saat demo/dinilai juri.
+
+- **`src/components/ChatMessage.tsx`** — `SnowflakeInsightCard` dirombak:
+  - Ikon `CloudSnow` (bukan `Database` generik) dalam badge biru Snowflake,
+    dengan gradient header sky-blue yang jelas berbeda dari kartu tool lain
+    (yang netral abu-abu).
+  - Nama agent (`RocAgentInsight`/`ROCAGENTINSIGHT`) ditampilkan besar +
+    label kecil "Snowflake Cortex Agent" di bawahnya — bukan lagi teks kecil
+    generik "Snowflake".
+  - Baris badge baru: "Powered by Snowflake Cortex Agents — real API call,
+    live semantic view" — penegasan eksplisit bahwa ini panggilan nyata,
+    bukan simulasi, tanpa perlu expand JSON mentah untuk membuktikannya.
+  - Kategori grup tool ("Snowflake Insight" di `ExecutionLogsGroup`) ikut
+    memakai ikon & warna `CloudSnow`/sky yang sama untuk konsistensi.
+
+Verifikasi di sandbox:
+- `tsc --noEmit` → EXIT 0
+- `npm test` (114 kasus) → semua lulus, nol regresi
+- `npm run build` → sukses
+
 ## 2026-07-31 — UI: query_snowflake_insight tidak punya kartu tampilan sendiri
 
 Owner bertanya kenapa "RocAgentInsight" tidak muncul di dropdown pilihan

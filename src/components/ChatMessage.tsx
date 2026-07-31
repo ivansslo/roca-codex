@@ -3,7 +3,7 @@ import Markdown from 'react-markdown';
 import { Message } from '../types';
 import {
   Bot, User, FileText, Sparkles, Copy,
-  Terminal, Check, ChevronDown, ChevronRight, FileCode, ChevronUp, Download, CheckCircle2, XCircle, Eye, EyeOff, RefreshCw, Globe, Wrench, Search, Database
+  Terminal, Check, ChevronDown, ChevronRight, FileCode, ChevronUp, Download, CheckCircle2, XCircle, Eye, EyeOff, RefreshCw, Globe, Wrench, Search, CloudSnow, Zap
 } from 'lucide-react';
 
 interface ChatMessageProps {
@@ -232,9 +232,14 @@ function FileDiffCard({ filename, content }: { filename: string; content: string
   );
 }
 
-// Snowflake Cortex Agent (RocAgentInsight) result card — shows the clean
-// answer + which internal Cortex tools were used, never the raw SSE dump
-// (log.result.raw_response can be up to 12KB of event:/data: frames).
+// Snowflake Cortex Agent (RocAgentInsight) result card. Deliberately branded
+// as its own agent identity (Snowflake-blue theme, "Powered by Snowflake
+// Cortex Agents" badge) instead of blending into the generic tool list —
+// this is a REAL call to a Cortex Agent object living in Snowflake, not a
+// simulated response, and the card should make that obvious at a glance
+// (e.g. for a hackathon demo/judging pass) without needing to expand the
+// raw JSON to prove it. tools_used surfaces the actual internal Cortex
+// tool names (rocagent_ops_analyst, system_execute_sql, ...) as evidence.
 function SnowflakeInsightCard({ log }: { log: any }) {
   const [expanded, setExpanded] = useState(true);
   const question = log.args?.question || '';
@@ -245,15 +250,19 @@ function SnowflakeInsightCard({ log }: { log: any }) {
   const durationStr = formatDuration(log.timeMs);
 
   return (
-    <div className="space-y-1.5 font-mono text-xs select-none">
+    <div className="space-y-1.5 font-mono text-xs select-none my-2">
       <div
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center justify-between py-1.5 px-2.5 bg-slate-900/60 hover:bg-slate-900 border border-slate-800/80 rounded-lg text-slate-300 text-xs cursor-pointer select-none transition-colors"
+        className="flex items-center justify-between py-2 px-3 bg-gradient-to-r from-sky-950/80 via-slate-900/80 to-slate-900/60 hover:from-sky-950 border border-sky-500/30 rounded-lg text-slate-300 text-xs cursor-pointer select-none transition-colors shadow-[0_0_12px_-4px_rgba(56,189,248,0.35)]"
       >
         <div className="flex items-center gap-2 truncate pr-2">
-          <Database size={13} className="text-blue-400 flex-shrink-0" />
-          <span className="text-slate-400">Snowflake</span>
-          <span className="font-mono text-[12px] font-bold text-slate-50 truncate">{agentName}</span>
+          <span className="flex items-center justify-center w-6 h-6 rounded-md bg-sky-500/15 border border-sky-400/40 flex-shrink-0">
+            <CloudSnow size={14} className="text-sky-300" />
+          </span>
+          <div className="flex flex-col leading-tight min-w-0">
+            <span className="font-mono text-[12.5px] font-extrabold text-sky-200 truncate">{agentName}</span>
+            <span className="text-[9px] text-sky-500/80 uppercase tracking-wider font-bold">Snowflake Cortex Agent</span>
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {isError ? (
@@ -267,14 +276,18 @@ function SnowflakeInsightCard({ log }: { log: any }) {
       </div>
 
       {expanded && (
-        <div className="pl-2 space-y-2 border-l-2 border-slate-800/80 my-1">
-          <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950 font-mono text-xs my-2">
+        <div className="pl-2 space-y-2 border-l-2 border-sky-500/30 my-1">
+          <div className="border border-sky-500/20 rounded-xl overflow-hidden bg-slate-950 font-mono text-xs my-2 shadow-lg">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-500/10 border-b border-sky-500/20 text-[9px] font-bold uppercase tracking-wider text-sky-300">
+              <Zap size={11} className="text-sky-400" />
+              <span>Powered by Snowflake Cortex Agents — real API call, live semantic view</span>
+            </div>
             {question && (
               <div className="px-3 py-2 border-b border-slate-800/80 text-[11px] text-slate-400">
-                <span className="text-blue-400 font-bold">Q: </span>{question}
+                <span className="text-sky-400 font-bold">Q: </span>{question}
               </div>
             )}
-            <div className={`flex items-center justify-between px-3 py-1.5 bg-slate-900/80 border-b border-slate-800 text-[10px] font-bold uppercase tracking-wider ${isError ? 'text-red-300' : 'text-blue-300'}`}>
+            <div className={`flex items-center justify-between px-3 py-1.5 bg-slate-900/80 border-b border-slate-800 text-[10px] font-bold uppercase tracking-wider ${isError ? 'text-red-300' : 'text-sky-300'}`}>
               <span>{isError ? 'ERROR' : 'ANSWER'}</span>
               {toolsUsed.length > 0 && (
                 <span className="text-[9px] normal-case font-normal text-slate-500">via {toolsUsed.join(', ')}</span>
@@ -408,7 +421,7 @@ function ExecutionLogsGroup({ logs }: { logs: any[] }) {
     { key: 'web', label: 'Web Search', Icon: Globe, color: 'text-cyan-400', logs: webLogs },
     { key: 'http', label: 'HTTP Requests', Icon: Globe, color: 'text-fuchsia-400', logs: httpLogs },
     { key: 'model', label: 'Model Cascading', Icon: Sparkles, color: 'text-purple-400', logs: modelLogs },
-    { key: 'snowflake', label: 'Snowflake Insight', Icon: Database, color: 'text-blue-400', logs: snowflakeLogs },
+    { key: 'snowflake', label: 'Snowflake Insight', Icon: CloudSnow, color: 'text-sky-300', logs: snowflakeLogs },
     { key: 'other', label: 'Other Tools', Icon: FileCode, color: 'text-slate-400', logs: otherLogs },
   ].filter(g => g.logs.length > 0);
 
