@@ -299,6 +299,20 @@ const DEFAULT_SCHEMA: DatabaseSchema = {
       }
     },
     {
+      name: "query_snowflake_insight",
+      description: "Ask a natural-language data question to a Snowflake Cortex Agent (default: RocAgentInsight, which analyzes RocAgent's own operational data — tool executions, success rate, shell-guard blocks). Returns the agent's real answer grounded in its semantic view; requires SNOWFLAKE_ACCOUNT/SNOWFLAKE_USER/SNOWFLAKE_PAT to be configured. Use when the owner asks about operational metrics, trends, or analytics backed by Snowflake.",
+      parameters: {
+        type: "object",
+        properties: {
+          question: { type: "string", description: "The natural-language question to ask the Cortex Agent, e.g. 'Berapa total eksekusi tool minggu ini?'." },
+          agent: { type: "string", description: "Optional agent name override. Defaults to SNOWFLAKE_INSIGHT_AGENT env or 'ROCAGENTINSIGHT'." },
+          database: { type: "string", description: "Optional database override. Defaults to SNOWFLAKE_INSIGHT_DB env or 'ROCAGENTINSIGHT_DB'." },
+          schema: { type: "string", description: "Optional schema override. Defaults to SNOWFLAKE_INSIGHT_SCHEMA env or 'GOVERNANCE'." }
+        },
+        required: ["question"]
+      }
+    },
+    {
       name: "git",
       description: "REAL git operations on the workspace repository. Actions: 'status' (git status), 'log' (recent commits), 'diff' (unstaged diff), 'pull' (git pull), 'sync' (stage all + commit + push, uses GITHUB_PAT). Returns ACTUAL stdout/stderr — never invent. Use when the user asks to check/update/push the repo.",
       parameters: {

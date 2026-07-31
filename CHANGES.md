@@ -3,6 +3,45 @@
 > Snapshot hasil refactor. Berisi proyek lengkap (sudah termasuk semua perubahan).
 > Tidak menyertakan: `node_modules/`, `dist/`, `.git/`, `db.json`, `sessions/`, `.env`.
 
+## 2026-07-31 — Tool baru: query_snowflake_insight (integrasi Cortex Agent Snowflake)
+
+Menambah satu tool baru ke RocAgent yang memanggil Cortex Agent Snowflake
+"RocAgentInsight" (dibangun terpisah di akun Snowflake operator, lihat
+`snowflake/README.md`), supaya Scout/Builder/role Agent Multi mana pun bisa
+bertanya data operasional dalam bahasa natural.
+
+- **`server/tools.ts`** — tool baru `query_snowflake_insight`: mem-POST ke
+  endpoint REST Cortex Agents (`api/v2/databases/.../agents/...:run`),
+  mem-parse response SSE-nya menjadi jawaban bersih (`answer`, `tools_used`),
+  dan mengembalikan error jelas kalau `SNOWFLAKE_ACCOUNT`/`SNOWFLAKE_USER`/
+  `SNOWFLAKE_PAT` belum diisi. Timeout 45s (lebih lama dari tool lain karena
+  Cortex Agent butuh beberapa putaran tool-call internal sebelum menjawab).
+- **`server/db.ts`** — deklarasi tool didaftarkan (17 tool inti sekarang,
+  naik dari 16).
+- **`docs/cloud.env.template`** dan **`docs/ENV_KEYS_LIST.md`** — variabel
+  baru didokumentasikan: `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`,
+  `SNOWFLAKE_PAT` (atau alias `SNOWFLAKE_KEY`), plus 3 variabel opsional
+  (`SNOWFLAKE_INSIGHT_DB/SCHEMA/AGENT`) untuk override target agent.
+- **`snowflake/`** (baru) — 5 skrip SQL + README yang membangun fondasi
+  Cortex Agent "RocAgentInsight" dari nol: role/warehouse/database/schema,
+  tabel `RAW`/`ANALYTICS` yang mencerminkan struktur `db.json` ExecutionLog,
+  Semantic View native Snowflake, definisi Cortex Agent, dan panduan
+  Business Continuity/DR (Database Replication manual untuk Enterprise
+  Edition, dengan contoh Failover Group untuk Business Critical+ di masa
+  depan).
+
+Verifikasi di sandbox:
+- `tsc --noEmit` → EXIT 0
+- `npm test` (guard + auth + endpoints + rocvault, 114 kasus) → semua lulus,
+  nol regresi
+- `npm run build` → sukses
+- **Panggilan nyata**: tool `query_snowflake_insight` dijalankan langsung
+  (bukan mock) dengan kredensial Snowflake asli — berhasil memanggil Cortex
+  Agent RocAgentInsight, menerima jawaban jujur bahwa tabel fakta operasional
+  masih kosong (belum ada log RocAgent yang di-ingest), dan `tools_used`
+  mengonfirmasi Cortex Agent benar-benar memakai `rocagent_ops_analyst` +
+  `system_execute_sql` secara internal.
+
 ## 2026-07-31 — Agent Multi: 8 role, 2 pipeline + CLI
 
 Menambah pipeline kedua ke Agent Multi dan perintah CLI untuk memicunya.

@@ -896,6 +896,98 @@ export const toolImplementations: Record<string, Function> = {
     }
   },
 
+  // Delegate a data-analysis question to a Snowflake Cortex Agent (e.g. the
+  // "RocAgentInsight" agent set up for operational log analysis). This is a
+  // REAL call to Snowflake's Cortex Agents REST API — it returns whatever
+  // the agent's semantic view / warehouse actually produced, never invented
+  // numbers. Reads credentials from env only (SNOWFLAKE_ACCOUNT, _USER, _PAT
+  // or _KEY); does nothing and returns a clear error if they're unset.
+  query_snowflake_insight: async (args: { question: string; agent?: string; database?: string; schema?: string }) => {
+    try {
+      const question = (args.question || "").trim();
+      if (!question) return { status: "error", message: "question is required" };
+
+      const account = process.env.SNOWFLAKE_ACCOUNT || "";
+      const user = process.env.SNOWFLAKE_USER || "";
+      const pat = process.env.SNOWFLAKE_PAT || process.env.SNOWFLAKE_KEY || "";
+      if (!account || !user || !pat) {
+        return {
+          status: "error",
+          message: "Snowflake belum dikonfigurasi. Set SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, dan SNOWFLAKE_PAT (atau SNOWFLAKE_KEY) di cloud.env.",
+        };
+      }
+
+      const database = args.database || process.env.SNOWFLAKE_INSIGHT_DB || "ROCAGENTINSIGHT_DB";
+      const schema = args.schema || process.env.SNOWFLAKE_INSIGHT_SCHEMA || "GOVERNANCE";
+      const agentName = args.agent || process.env.SNOWFLAKE_INSIGHT_AGENT || "ROCAGENTINSIGHT";
+
+      const host = `https://${account}.snowflakecomputing.com`;
+      const url = `${host}/api/v2/databases/${database}/schemas/${schema}/agents/${agentName}:run`;
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 45000);
+
+      let resp: Response;
+      try {
+        resp = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${pat}`,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-Snowflake-Authorization-Token-Type": "PROGRAMMATIC_ACCESS_TOKEN",
+          },
+          body: JSON.stringify({
+            messages: [{ role: "user", content: [{ type: "text", text: question }] }],
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+
+      const raw = await resp.text();
+      if (!resp.ok) {
+        return { status: "error", message: `Snowflake Cortex Agent HTTP ${resp.status}: ${raw.slice(0, 500)}` };
+      }
+
+      // The Agents REST API streams Server-Sent Events (event: .../data: {...}
+      // lines). Parse them here so the tool returns one clean answer instead
+      // of raw SSE frames the model would have to re-parse itself.
+      let finalText = "";
+      const toolsUsed: string[] = [];
+      let errorMsg = "";
+      for (const line of raw.split("\n")) {
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        let data: any;
+        try { data = JSON.parse(payload); } catch { continue; }
+        if (typeof data?.text === "string") finalText += data.text;
+        if (data?.name && !toolsUsed.includes(data.name)) toolsUsed.push(data.name);
+        if (data?.message && data?.code) errorMsg = data.message;
+      }
+
+      if (errorMsg && !finalText) {
+        return { status: "error", message: `Snowflake Cortex Agent error: ${errorMsg}` };
+      }
+
+      return {
+        status: "success",
+        agent: agentName,
+        question,
+        answer: finalText || "(Agent tidak mengembalikan teks jawaban — lihat raw_response.)",
+        tools_used: toolsUsed,
+        raw_response: raw.length > 12000 ? raw.slice(0, 12000) + "...(truncated)" : raw,
+      };
+    } catch (err: any) {
+      return {
+        status: "error",
+        message: err?.name === "AbortError" ? "Snowflake Cortex Agent request timed out (45s)" : err.message,
+      };
+    }
+  },
+
   // REAL git operations (status/log/diff/pull/sync). Output is actual stdout/stderr (token scrubbed).
   git: async (args: { action?: string; message?: string; branch?: string }) => {
     const action = (args.action || "status").toLowerCase();
