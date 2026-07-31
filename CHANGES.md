@@ -3,6 +3,57 @@
 > Snapshot hasil refactor. Berisi proyek lengkap (sudah termasuk semua perubahan).
 > Tidak menyertakan: `node_modules/`, `dist/`, `.git/`, `db.json`, `sessions/`, `.env`.
 
+## 2026-08-01 — Fix nama bentrok `oci` vs CLI Oracle; hapus referensi endpoint Ollama/Tailscale yang sudah dihapus
+
+**1. `tools/bashrc-helpers.sh` / `tools/install-bashrc-helpers.sh`: `oci()` → `oci_vm()`.**
+Owner memakai RocAgent dan `github.com/ivansslo/termuxrd-cloud` di Termux
+yang sama. `termuxrd-cloud` menginstal CLI resmi Oracle Cloud sebagai
+binary bernama `oci` di PATH. `tools/bashrc-helpers.sh` RocAgent
+mendefinisikan fungsi shell `oci()` sendiri (SSH ke VM, uji port dulu,
+bukan CLI Oracle) — karena fungsi shell diselesaikan sebelum binary di
+PATH, mengetik `oci compute instance list` di shell manapun yang sudah
+`source ~/.bashrc` diam-diam memanggil SSH RocAgent, bukan CLI Oracle
+asli. Dilaporkan owner: "opsi 2 (Install OCI CLI) setelah jalankan fungsi
+oci-cli jadi masuk ke VM".
+
+Fungsi diganti nama jadi `oci_vm()` (implementasi `oci_shell()` di
+baliknya tidak berubah). `install-bashrc-helpers.sh` diperbarui: ringkasan
+perintah di akhir instalasi menyebut `oci_vm`, dan — karena `.bashrc`
+hanya men-`source` file helper (bukan menyalin definisinya), meng-install
+ulang otomatis memuat versi baru untuk shell BARU — ditambahkan peringatan
+eksplisit saat instalasi terdeteksi sebagai upgrade (marker
+`RocAgent helpers` sudah ada sebelumnya): shell interaktif yang SEDANG
+berjalan mungkin masih punya `oci()` lama di memori sampai dibuka ulang.
+
+**Diverifikasi live**: dijalankan `install-bashrc-helpers.sh` di `$HOME`
+sandbox terisolasi (fresh install lalu upgrade) — dikonfirmasi
+`type oci_vm` mengembalikan fungsi yang benar, `type oci` sudah tidak ada
+sama sekali, dan pesan peringatan migrasi muncul tepat saat upgrade.
+
+**2. `docs/cloud.env.template`, `tools/bashrc-helpers.sh`: hapus referensi node Tailscale yang sudah dihapus.**
+Owner mengonfirmasi node Tailscale `awsx` (sebelumnya bernama `roadfx`,
+hostname `awsx.tail759f3e.ts.net`, IP `100.100.237.104`) — yang sesi
+sebelumnya (2026-07-31) baru saja dijadikan rujukan `VM_TAILSCALE_HOSTNAME`
+dan `OCI_MODEL_ENDPOINT` untuk provider Ollama/OCI di
+`server/orchestrator.ts` — **sudah dihapus total** dari
+console.tailscale.com, belum ada pengganti. `cloud.env.template`
+dikembalikan ke kosong/placeholder untuk `VM_TAILSCALE_HOSTNAME` dan
+`OCI_MODEL_ENDPOINT`, dengan catatan eksplisit kenapa (bukan sekadar
+dihapus diam-diam — nilai lama itu jangan dipakai lagi kalau owner
+menemukannya di riwayat/backup). `AWS_TS_IP`/`AWS_PUBLIC_IP` di
+`bashrc-helpers.sh` (dipakai fungsi `awsx()`, node yang sama) diberi
+catatan serupa; nilainya sengaja TIDAK dikosongkan supaya `_roc_connect`
+tetap menguji port dan gagal dengan pesan jelas ("tidak terjangkau"),
+bukan error variabel-kosong yang membingungkan.
+
+Verifikasi:
+- `bash -n` pada kedua file shell yang diubah → tidak ada error sintaks.
+- `npx tsc --noEmit` → 0 error.
+- `npx vite build` → sukses.
+- `npm test` → 6 suite, 134 kasus, 0 gagal, tanpa regresi (perubahan ini
+  murni file shell, tidak menyentuh kode TypeScript, divalidasi penuh
+  tetap sesuai standar proyek).
+
 ## 2026-07-31 — Hapus fitur "Synced Apps" fiktif; perbaiki system prompt yang menyebut repo yang sudah dihapus/di-rename
 
 Owner melaporkan agent "masih menyimpan ingatan lama" saat ditanya

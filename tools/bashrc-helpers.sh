@@ -22,7 +22,14 @@ export OCI_TS_IP="100.125.151.105"
 export OCI_PUBLIC_IP="161.118.213.55"      # port publik DITUTUP — rujukan saja
 export OCI_USER="ubuntu"
 
-# AWS (roadfx, EC2)
+# AWS (roadfx/awsx, EC2) -- CATATAN 2026-08-01: node ini SUDAH DIHAPUS dari
+# console.tailscale.com oleh owner. IP di bawah tidak lagi menjangkau
+# device manapun yang relevan (dan bisa saja didaur ulang Tailscale untuk
+# device lain di masa depan -- jangan asumsikan "tidak terjangkau" berarti
+# "sedang offline sementara"). Dibiarkan terisi (bukan dikosongkan) supaya
+# _roc_connect di bawah tetap menguji port dan gagal dengan pesan jelas,
+# bukan error variabel-kosong yang membingungkan. Isi ulang kalau ada
+# node AWS pengganti.
 export AWS_TS_IP="100.100.237.104"
 export AWS_PUBLIC_IP="100.89.119.93"
 export AWS_USER="${AWS_USER:-ubuntu}"
@@ -65,9 +72,17 @@ _roc_connect() {
 }
 
 # ── Perintah ──────────────────────────────────────────────────────
-# oci [perintah...]   tanpa argumen = shell interaktif
+# oci_vm [perintah...]   tanpa argumen = shell interaktif ke VM Oracle
+#
+# Bukan bernama `oci` dengan sengaja: `oci` adalah nama binary CLI resmi
+# Oracle Cloud (lihat github.com/ivansslo/termuxrd-cloud, terpasang lewat
+# scripts/termux-oci-cli.sh). Kalau helper ini juga memakai nama `oci`,
+# fungsi shell ini akan menutupi (shadow) binary aslinya di PATH — siapa
+# pun yang mengetik `oci compute instance list` akan tanpa sadar memanggil
+# SSH ke VM ini alih-alih CLI Oracle yang sesungguhnya. Ditemukan 2026-08-01
+# saat kedua repo dipakai bersamaan di Termux yang sama.
 oci_shell() { _roc_connect "OCI" "$OCI_TS_IP" "$OCI_PUBLIC_IP" "$OCI_USER" "$@"; }
-oci()       { oci_shell "$@"; }
+oci_vm()    { oci_shell "$@"; }
 
 # aws_shell [perintah...]
 aws_shell() { _roc_connect "AWS" "$AWS_TS_IP" "$AWS_PUBLIC_IP" "$AWS_USER" "$@"; }
@@ -139,5 +154,5 @@ roctest() { roc bash tools/test-agent.sh; }
 
 # CATATAN: tidak ada auto-connect saat shell dibuka.
 # Blok lama menjalankan SSH otomatis setiap kali Termux dibuka, dan ketika
-# host tidak terjangkau shell-mu tersandera sampai timeout. Panggil `oci`
+# host tidak terjangkau shell-mu tersandera sampai timeout. Panggil `oci_vm`
 # atau `awsx` saat memang diperlukan.
