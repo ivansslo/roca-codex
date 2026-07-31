@@ -1,11 +1,12 @@
 // Tests for the oci_vm and rootd_fs execution tools (server/tools.ts).
 //
-// These tools shell out to external binaries (`oci`, `rootd`) that are not
-// installed in this sandbox/CI environment, so this suite deliberately does
-// NOT assert on real cloud/container behaviour — that would require a live
-// OCI account and a Termux rootd-fs install, neither of which exist here.
-// Instead it asserts on everything this test environment CAN verify for
-// real, in-process, with no mocking of the guard or the tool logic itself:
+// These tools shell out to external binaries (`oci`, `rootd`) that may or
+// may not be installed depending on where this suite runs: absent in this
+// sandbox/CI environment, but genuinely present on the owner's own Termux
+// device (oci-cli and rootd-fs are both installed there). The suite must
+// pass in BOTH cases without assuming which one it's running in.
+//
+// It asserts on everything that is true regardless of environment:
 //
 //   1. Required-parameter validation returns a clear error before any
 //      process is spawned (list/launch/power/resize each have distinct
@@ -21,13 +22,17 @@
 //      since an interactive TTY subcommand cannot work through a one-shot
 //      tool call.
 //   5. When the required parameters ARE present, the tool proceeds past
-//      validation into the real execFile call — which then fails with
-//      ENOENT ("binary tidak ditemukan") in this sandbox precisely because
-//      oci-cli/rootd are not installed here. That ENOENT is itself the
-//      proof the tool reached real process execution rather than
-//      short-circuiting or fabricating a result — on the owner's own
-//      device, where both binaries are installed, the same code path
-//      reaches the real CLI instead.
+//      validation into the real execFile call. server/tools.ts's run()
+//      helper (oci_vm) and the rootd_fs try/catch both put `action` /
+//      `subcommand` on the returned object on EVERY code path past
+//      validation — success, ENOENT (binary missing, this sandbox), or a
+//      real CLI error (binary present but the fake ocid/box name in this
+//      test is rejected by the real oci-cli/rootd, as on the owner's
+//      device). Asserting on that field, rather than on any specific error
+//      message, is what makes this test environment-agnostic: it proves
+//      "the tool did not short-circuit before reaching execution" without
+//      caring whether execution itself succeeded, failed with ENOENT, or
+//      failed with a real CLI error.
 //   6. checkCommand() (the shared guard both tools funnel through via
 //      guardShell) does not block well-formed oci/rootd invocations outright
 //      — i.e. this guard integration does not accidentally make the tools
@@ -70,10 +75,13 @@ async function main() {
     ok(r.status === 'error' && r.requiresConfirmation === true, "terminate tanpa confirm -> ditolak, requiresConfirmation:true");
   }
 
-  console.log('\n-- oci_vm: valid call reaches real execFile (ENOENT in this sandbox = proof of real execution) --');
+  console.log('\n-- oci_vm: valid call reaches real execFile (env-agnostic: ENOENT here, real oci-cli on owner device) --');
   {
     const r: any = await toolImplementations.oci_vm({ action: 'list', compartmentId: 'ocid1.x' });
-    ok(r.status === 'error' && /oci-cli tidak ditemukan/.test(r.message), "list valid -> mencoba spawn oci nyata, gagal ENOENT (bukan bug, oci-cli tak terpasang di sandbox ini)");
+    // r.action is only set by the run() helper AFTER validation passes, on every
+    // branch (success, ENOENT, or a real CLI error) — present regardless of
+    // whether oci-cli is installed in the environment running this test.
+    ok(r.action === 'list', "list valid -> melewati validasi, mencapai execFile nyata (ENOENT di sandbox tanpa oci-cli, atau respons oci-cli asli di device dengan oci-cli terpasang)");
   }
 
   console.log('\n-- rootd_fs: subcommand allowlist + enter rejection --');
@@ -96,10 +104,12 @@ async function main() {
     ok(r.status === 'error' && r.requiresConfirmation === true, "purge tanpa confirm -> ditolak, requiresConfirmation:true");
   }
 
-  console.log('\n-- rootd_fs: valid call reaches real execFile (ENOENT in this sandbox = proof of real execution) --');
+  console.log('\n-- rootd_fs: valid call reaches real execFile (env-agnostic: ENOENT here, real rootd on owner device) --');
   {
     const r: any = await toolImplementations.rootd_fs({ subcommand: 'ls' });
-    ok(r.status === 'error' && /rootd tidak ditemukan/.test(r.message), "ls valid -> mencoba spawn rootd nyata, gagal ENOENT (bukan bug, rootd-fs tak terpasang di sandbox ini)");
+    // Same reasoning as oci_vm above: r.subcommand is set on every branch past
+    // validation, regardless of whether the real `rootd` binary is installed.
+    ok(r.subcommand === 'ls', "ls valid -> melewati validasi, mencapai execFile nyata (ENOENT di sandbox tanpa rootd-fs, atau respons rootd asli di device dengan rootd-fs terpasang)");
   }
 
   console.log('\n-- shared guard: well-formed oci/rootd invocations are not blocked outright --');
