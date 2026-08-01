@@ -1239,13 +1239,6 @@ export async function runOrchestrator
   // OpenAI menolaknya. Akibatnya PROVIDER=openai tanpa memilih model di UI
   // selalu gagal pada percobaan pertama.
   const DEFAULT_MODEL: Record<string, string> = {
-    gemini: "gemini-2.5-flash",
-    openai: "gpt-4o-mini",
-    groq: "openai/gpt-oss-120b",
-    openrouter: "google/gemini-2.0-flash-001",
-    cfai: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-    oci: "qwen2.5:7b",
-    roadqwen: "qwen3.6-plus",
     cfsherlock: "MiniMaxAI/MiniMax-M2.5",
   };
   const model = rawModel && rawModel !== "gemini-3.6-flash"

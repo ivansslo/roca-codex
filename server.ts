@@ -106,11 +106,6 @@ async function startServer() {
     // meski hanya satu penyedia yang punya kunci, sehingga memilih model mana
     // pun terlihat sah tetapi gagal tanpa penjelasan.
     const have = {
-      gemini: !!(process.env.GEMINI_API_KEY || process.env.GEMINI_KEY || process.env.GOOGLE_API_KEY),
-      groq: !!(process.env.GROQ_KEY || process.env.GROQ_API_KEY),
-      openai: !!(process.env.OPENAI_API_KEY || process.env.OPENAI_KEY),
-      openrouter: !!(process.env.OPENROUTER_API_KEY || process.env.OR_KEY || process.env.OPENROUTER_KEY || process.env.DEEPSEK_API_KEY),
-      cfai: !!(process.env.CF_AI_TOKEN || process.env.CF_TOKEN),
       cfsherlock: !!(process.env.CF_SHERLOCK_KEY || process.env.CLOUDFERRO_SHERLOCK_API_KEY || process.env.CLOUDFERRO_KEY),
     } as Record<string, boolean>;
 
