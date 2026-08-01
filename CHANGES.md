@@ -3,6 +3,66 @@
 > Snapshot hasil refactor. Berisi proyek lengkap (sudah termasuk semua perubahan).
 > Tidak menyertakan: `node_modules/`, `dist/`, `.git/`, `db.json`, `sessions/`, `.env`.
 
+## 2026-08-01 — Fix: model mengulang tool identik berkali-kali tanpa progres (dedup + circuit breaker)
+
+Ditemukan owner lewat log nyata: model (dikonfirmasi live pada CloudFerro
+Sherlock MiniMaxAI/MiniMax-M2.5, kemungkinan model non-reasoning lain juga
+rentan) memanggil `query_snowflake_insight` dengan pertanyaan **PERSIS
+sama** sebanyak 12x berturut-turut dalam satu giliran — padahal hasil
+panggilan pertama sudah ada di riwayat pesan yang benar-benar terkirim
+balik ke API (transport riwayat diverifikasi benar; ini murni model tidak
+"membaca" riwayatnya sendiri dengan cermat). Dampaknya serius, bukan cuma
+lambat: `query_snowflake_insight` adalah REQUEST NYATA ke Snowflake Cortex
+Agent tiap kali dipanggil — 12x panggilan identik berarti 12x biaya/kuota
+Snowflake sungguhan terbuang untuk satu pertanyaan yang sama.
+
+**`server/orchestrator.ts`**, dua lapis perbaikan:
+
+1. **Deduplikasi** (`executeToolDeduped`, `buildToolCallKey`) — setiap
+   giliran orchestrator melacak tool+argumen (dinormalisasi urutan key)
+   yang SUDAH benar-benar dieksekusi. Panggilan berikutnya dengan
+   tool+argumen identik TIDAK dieksekusi ulang (hemat biaya API nyata) —
+   hasil sebelumnya dipakai lagi, disertai `_duplicate_call_notice`
+   eksplisit di JSON hasil yang dikirim ke model, memberi tahu bahwa ini
+   pengambilan ulang bukan eksekusi baru.
+2. **Circuit breaker** (`DUPLICATE_CALL_STRIKE_LIMIT = 2`,
+   `duplicateToolLoopMessage`) — diverifikasi live: model kadang tetap
+   "ngotot" mencoba tool identik lagi walau sudah diberi tahu itu
+   duplikat. Setelah 2 duplikat terdeteksi dalam satu giliran, loop
+   dihentikan PAKSA (tidak menunggu sampai `MAX_TOOL_TURNS`), dan jawaban
+   akhir dibangun dari hasil tool yang sudah didapat (`answer`/`message`
+   dari log eksekusi terakhir), bukan pesan generik "kehabisan giliran".
+
+Diterapkan konsisten di keenam fungsi provider yang memanggil tool
+(`callGroq`, `callOpenAI`, `callOpenRouter`, `callGemini`, `callRoadQwen`,
+`callCloudFerro`) — pola loop-nya berbeda-beda di tiap fungsi (indeks
+`data.choices` vs `contents`/`calls` khusus Gemini, loop multi-endpoint
+RoadQwen), jadi setiap titik keluar loop ditangani sesuai strukturnya
+masing-masing.
+
+Diverifikasi live lewat `runOrchestrator()` asli (bukan mock), diulang
+5x untuk menangkap variasi perilaku model yang tidak selalu deterministik:
+- Beberapa percobaan: dedup bekerja, mengurangi jumlah eksekusi tool
+  nyata dari yang diminta model (mis. 3 permintaan tool_start,
+  hanya panggilan pertama yang benar-benar dieksekusi — sisanya
+  di-suppress dengan log `"Duplicate tool call suppressed ... strike
+  N/2"` yang terlihat di output).
+- Satu percobaan direproduksi persis seperti laporan owner: 2 strike
+  duplikat terdeteksi, loop diputus paksa hanya setelah 3 tool_start
+  (bukan 12), hasil akhir `"⚠️ Saya mendeteksi diri saya memanggil tool
+  yang SAMA PERSIS berulang kali tanpa progres, jadi saya hentikan paksa
+  ..."` — tepat seperti yang dirancang.
+- Beberapa percobaan lain: model memvariasikan sedikit kata di
+  pertanyaan/query tiap panggilan (bukan identik persis), sehingga dedup
+  tidak berlaku tapi tetap mentok `MAX_TOOL_TURNS` — tertangani oleh fix
+  sesi sebelumnya (`toolBudgetExhaustedMessage`, dilaporkan jujur, bukan
+  "provider gagal").
+
+Verifikasi:
+- `npx tsc --noEmit` → 0 error.
+- `npx vite build` → sukses.
+- `npm test` → 6 suite, 134 kasus, 0 gagal, tanpa regresi.
+
 ## 2026-08-01 — Fix: kehabisan giliran tool disamarkan jadi "provider gagal total" (6 provider)
 
 Ditemukan saat owner meminta benchmark objektif CloudFerro Sherlock vs

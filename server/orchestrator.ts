@@ -73,6 +73,76 @@ function toolBudgetExhaustedMessage(executionLogs: any[]): string {
   return `⚠️ Saya kehabisan jatah percobaan tool (${MAX_TOOL_TURNS}x) sebelum menyelesaikan permintaan ini — ini BUKAN kegagalan provider/API key/kuota. ${summary}\n\nKemungkinan penyebab: informasi yang dibutuhkan (mis. ID resource, compartment, path file) belum tersedia dan saya terus mencoba mencarinya sendiri. Beri saya info itu langsung, atau minta saya laporkan lebih detail apa saja yang sudah ditemukan sejauh ini.`;
 }
 
+// Ditemukan 2026-08-01 lewat benchmark provider: model non-reasoning (dikonfirmasi
+// live pada MiniMaxAI/MiniMax-M2.5 via CloudFerro Sherlock, kemungkinan berlaku juga
+// pada model non-reasoning lain) kadang memanggil tool yang SAMA PERSIS — nama dan
+// argumen identik — berkali-kali dalam satu giliran orchestrator, walau hasil
+// panggilan sebelumnya sudah ada di riwayat pesan yang benar-benar dikirim balik ke
+// API (transport histori sudah diverifikasi benar; ini murni model tidak "membaca"
+// riwayatnya sendiri dengan cermat sebelum memutuskan tool berikutnya). Dampaknya
+// nyata dan berbahaya: query_snowflake_insight terpanggil 12x dengan pertanyaan
+// yang sama persis dalam satu percakapan — setiap panggilan adalah REQUEST NYATA ke
+// Snowflake Cortex Agent (biaya & kuota sungguhan), bukan sekadar lambat.
+//
+// Perbaikan dilakukan di sisi kode, bukan mengandalkan model untuk "lebih pintar":
+// setiap giliran orchestrator (per pemanggilan callGroq/callOpenAI/dst, BUKAN lintas
+// percakapan/provider) melacak tool+argumen yang sudah benar-benar dieksekusi. Kalau
+// tool dengan argumen identik diminta lagi, TIDAK dieksekusi ulang — hasil yang sudah
+// ada dipakai lagi, dan diberi catatan eksplisit di JSON hasil supaya model diberi
+// tahu ini bukan eksekusi baru dan diminta berhenti mengulang.
+function buildToolCallKey(toolName: string, args: any): string {
+  let normalizedArgs: any = args;
+  if (args && typeof args === 'object' && !Array.isArray(args)) {
+    normalizedArgs = Object.keys(args).sort().reduce((acc: any, k) => { acc[k] = (args as any)[k]; return acc; }, {} as any);
+  }
+  return `${toolName}::${JSON.stringify(normalizedArgs)}`;
+}
+
+// How many times a model may be told "you already called this exact tool with these
+// exact args" before we stop indulging it and force the turn to end. Observed live: a
+// model warned once about a duplicate call sometimes tries the SAME identical call
+// again anyway, burning turns until MAX_TOOL_TURNS with no new information — the
+// per-call notice alone reduces API cost/risk but doesn't reliably change the model's
+// behaviour. 2 strikes (i.e. the 2nd time in a turn we see ANY duplicate, not
+// necessarily the same one) is enough to conclude the model is stuck, not "about to
+// try something new".
+const DUPLICATE_CALL_STRIKE_LIMIT = 2;
+
+async function executeToolDeduped(
+  toolName: string,
+  toolArgs: any,
+  onProgress: Function | undefined,
+  seenToolCalls: Map<string, any>,
+  duplicateCounter: { count: number }
+): Promise<any> {
+  const key = buildToolCallKey(toolName, toolArgs);
+  if (seenToolCalls.has(key)) {
+    duplicateCounter.count++;
+    safeConsoleWarn(`[Orchestrator] Duplicate tool call suppressed (identical name+args already executed this turn, strike ${duplicateCounter.count}/${DUPLICATE_CALL_STRIKE_LIMIT}): ${toolName}`, toolArgs);
+    return {
+      ...seenToolCalls.get(key),
+      _duplicate_call_notice: `PERHATIAN: tool '${toolName}' dengan argumen yang PERSIS sama sudah dipanggil sebelumnya di giliran ini. Ini adalah hasil yang SAMA (diambil ulang, bukan eksekusi baru). Jangan panggil tool ini lagi dengan argumen yang sama — gunakan hasil ini untuk menjawab, atau ubah argumennya kalau memang butuh data berbeda.`,
+    };
+  }
+  const result = await executeTool(toolName, toolArgs, onProgress as any);
+  seenToolCalls.set(key, result);
+  return result;
+}
+
+// Called when DUPLICATE_CALL_STRIKE_LIMIT is hit: give up trying to get a fresh answer
+// out of the model and hand back whatever the duplicated tool(s) actually returned, so
+// the owner still gets real grounded data instead of a generic "I ran out of turns"
+// message when the answer was sitting right there in executionLogs already.
+function duplicateToolLoopMessage(executionLogs: any[]): string {
+  const last = executionLogs[executionLogs.length - 1];
+  const lastAnswer = last?.result?.answer || last?.result?.message;
+  const toolNames = [...new Set(executionLogs.map((l: any) => l.toolName))];
+  const grounded = lastAnswer
+    ? `\n\nHasil tool terakhir yang berhasil (bukan diulang):\n\n${lastAnswer}`
+    : "";
+  return `⚠️ Saya mendeteksi diri saya memanggil tool yang SAMA PERSIS berulang kali tanpa progres, jadi saya hentikan paksa alih-alih terus mengulang (ini menghemat panggilan API sungguhan yang tidak perlu). Tool yang dicoba: ${toolNames.join(", ")}.${grounded}\n\nKalau jawaban di atas belum cukup, coba ajukan ulang dengan pertanyaan yang lebih spesifik.`;
+}
+
 // Goal-executing agent prompt: the agent must ACCOMPLISH the user's intent AND never fabricate results.
 const OWNER_SYSTEM_PROMPT_BASE = `You are RocAgent, an autonomous goal-executing engineering agent in a LIVE workspace with REAL tool access (read/write/edit files, search, run shell, zip inspection, memory, http).
 
@@ -316,6 +386,8 @@ async function callGroq(messages: any[], modelName: string, executionLogs: any[]
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
   let turn = 0;
+  const seenToolCalls = new Map<string, any>(); // dedupe identical tool+args calls within this turn (see executeToolDeduped)
+  const duplicateCallStrikes = { count: 0 }; // circuit breaker: force-stop after DUPLICATE_CALL_STRIKE_LIMIT repeats
   while (data.choices && data.choices[0]?.message?.tool_calls && turn < MAX_TOOL_TURNS) {
     turn++;
     const assistantMsg = data.choices[0].message;
@@ -332,7 +404,7 @@ async function callGroq(messages: any[], modelName: string, executionLogs: any[]
       safeConsoleLog(`[Groq Tool] Calling Parallel: ${toolName}`, toolArgs);
       onProgress?.({ type: 'tool_start', data: { toolName, toolArgs } });
 
-      const result = await executeTool(toolName, toolArgs, onProgress as any);
+      const result = await executeToolDeduped(toolName, toolArgs, onProgress, seenToolCalls, duplicateCallStrikes);
 
       db.addLog({ timestamp: new Date().toISOString(), toolName, args: toolArgs, result });
       executionLogs.push({ toolName, args: toolArgs, result });
@@ -347,6 +419,7 @@ async function callGroq(messages: any[], modelName: string, executionLogs: any[]
 
     const toolResponses = await Promise.all(toolPromises);
     reqMessages.push(...(toolResponses as any));
+    if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT) break;
 
     resp = await robustFetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
@@ -368,6 +441,14 @@ async function callGroq(messages: any[], modelName: string, executionLogs: any[]
 
   const stillWantsTools = !!(data.choices && data.choices[0]?.message?.tool_calls);
   const responseText = data.choices && data.choices[0]?.message?.content ? data.choices[0].message.content : "";
+  if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT && (!responseText || !responseText.trim())) {
+    // Loop was force-stopped by the circuit breaker (model kept repeating an
+    // identical tool call), not a real empty response or a genuine turn-budget
+    // exhaustion. Ground the answer in whatever the repeated tool actually returned.
+    const text = duplicateToolLoopMessage(executionLogs);
+    onProgress?.({ type: 'chunk', data: { text } });
+    return { text, logs: executionLogs };
+  }
   if (!responseText || !responseText.trim()) {
     if (stillWantsTools) {
       // Loop exited because MAX_TOOL_TURNS ran out while the model was still trying
@@ -418,6 +499,8 @@ async function callOpenAI(messages: any[], modelName: string, executionLogs: any
     if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
     let turn = 0;
+    const seenToolCalls = new Map<string, any>(); // dedupe identical tool+args calls within this turn (see executeToolDeduped)
+    const duplicateCallStrikes = { count: 0 }; // circuit breaker: force-stop after DUPLICATE_CALL_STRIKE_LIMIT repeats
     while (data.choices && data.choices[0]?.message?.tool_calls && turn < MAX_TOOL_TURNS) {
       turn++;
       const assistantMsg = data.choices[0].message;
@@ -433,7 +516,7 @@ async function callOpenAI(messages: any[], modelName: string, executionLogs: any
         safeConsoleLog(`[OpenAI Tool] Calling Parallel: ${toolName}`, toolArgs);
         onProgress?.({ type: 'tool_start', data: { toolName, toolArgs } });
 
-        const result = await executeTool(toolName, toolArgs, onProgress as any);
+        const result = await executeToolDeduped(toolName, toolArgs, onProgress, seenToolCalls, duplicateCallStrikes);
 
         db.addLog({ timestamp: new Date().toISOString(), toolName, args: toolArgs, result });
         executionLogs.push({ toolName, args: toolArgs, result });
@@ -448,6 +531,7 @@ async function callOpenAI(messages: any[], modelName: string, executionLogs: any
 
       const toolResponses = await Promise.all(toolPromises);
       reqMessages.push(...(toolResponses as any));
+      if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT) break;
 
       resp = await robustFetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
@@ -469,6 +553,11 @@ async function callOpenAI(messages: any[], modelName: string, executionLogs: any
 
     const stillWantsTools = !!(data.choices && data.choices[0]?.message?.tool_calls);
     const responseText = data.choices && data.choices[0]?.message?.content ? data.choices[0].message.content : "";
+    if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT && (!responseText || !responseText.trim())) {
+      const text = duplicateToolLoopMessage(executionLogs);
+      onProgress?.({ type: 'chunk', data: { text } });
+      return { text, logs: executionLogs };
+    }
     if (!responseText || !responseText.trim()) {
       if (stillWantsTools) {
         const text = toolBudgetExhaustedMessage(executionLogs);
@@ -545,6 +634,8 @@ async function callOpenRouter(messages: any[], modelName: string, executionLogs:
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
   let turn = 0;
+  const seenToolCalls = new Map<string, any>(); // dedupe identical tool+args calls within this turn (see executeToolDeduped)
+  const duplicateCallStrikes = { count: 0 }; // circuit breaker: force-stop after DUPLICATE_CALL_STRIKE_LIMIT repeats
   while (data.choices && data.choices[0]?.message?.tool_calls && turn < MAX_TOOL_TURNS) {
     turn++;
     const assistantMsg = data.choices[0].message;
@@ -560,7 +651,7 @@ async function callOpenRouter(messages: any[], modelName: string, executionLogs:
       safeConsoleLog(`[OpenRouter Tool] Calling Parallel: ${toolName}`, toolArgs);
       onProgress?.({ type: 'tool_start', data: { toolName, toolArgs } });
 
-      const result = await executeTool(toolName, toolArgs, onProgress as any);
+      const result = await executeToolDeduped(toolName, toolArgs, onProgress, seenToolCalls, duplicateCallStrikes);
 
       db.addLog({ timestamp: new Date().toISOString(), toolName, args: toolArgs, result });
       executionLogs.push({ toolName, args: toolArgs, result });
@@ -575,6 +666,7 @@ async function callOpenRouter(messages: any[], modelName: string, executionLogs:
 
     const toolResponses = await Promise.all(toolPromises);
     reqMessages.push(...(toolResponses as any));
+    if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT) break;
 
     resp = await robustFetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -598,6 +690,14 @@ async function callOpenRouter(messages: any[], modelName: string, executionLogs:
 
   const stillWantsTools = !!(data.choices && data.choices[0]?.message?.tool_calls);
   const responseText = data.choices && data.choices[0]?.message?.content ? data.choices[0].message.content : "";
+  if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT && (!responseText || !responseText.trim())) {
+    // Loop was force-stopped by the circuit breaker (model kept repeating an
+    // identical tool call), not a real empty response or a genuine turn-budget
+    // exhaustion. Ground the answer in whatever the repeated tool actually returned.
+    const text = duplicateToolLoopMessage(executionLogs);
+    onProgress?.({ type: 'chunk', data: { text } });
+    return { text, logs: executionLogs };
+  }
   if (!responseText || !responseText.trim()) {
     if (stillWantsTools) {
       // Loop exited because MAX_TOOL_TURNS ran out while the model was still trying
@@ -663,6 +763,8 @@ async function callGemini(messages: any[], modelName: string, executionLogs: any
   for (const mName of candidateModels) {
     try {
       onProgress?.({ type: 'status', data: { message: `Connecting to Gemini (${mName})${useStream ? ' [stream]' : ''}...` } });
+      const seenToolCalls = new Map<string, any>(); // dedupe identical tool+args calls within this model attempt (see executeToolDeduped)
+      const duplicateCallStrikes = { count: 0 }; // circuit breaker: force-stop after DUPLICATE_CALL_STRIKE_LIMIT repeats
 
       const genConfig = {
         systemInstruction: buildSystemPrompt(ACTIVE_PERSONA_ID, undefined, messages, activeFile),
@@ -714,7 +816,7 @@ async function callGemini(messages: any[], modelName: string, executionLogs: any
           const toolArgs = call.args;
           safeConsoleLog(`[Gemini Tool] ${toolName}`, toolArgs);
           onProgress?.({ type: 'tool_start', data: { toolName, toolArgs } });
-          const result = await executeTool(toolName, toolArgs, onProgress as any);
+          const result = await executeToolDeduped(toolName, toolArgs, onProgress, seenToolCalls, duplicateCallStrikes);
           db.addLog({ timestamp: new Date().toISOString(), toolName, args: toolArgs, result });
           executionLogs.push({ toolName, args: toolArgs, result });
           onProgress?.({ type: 'tool_result', data: { toolName, result } });
@@ -722,10 +824,16 @@ async function callGemini(messages: any[], modelName: string, executionLogs: any
         }));
         contents.push({ role: 'model', parts: calls.map((c: any) => ({ functionCall: c })) });
         contents.push({ role: 'user', parts: toolResponses });
+        if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT) break;
       }
 
       if (finalText.trim()) {
         return { text: finalText, logs: executionLogs };
+      }
+      if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT) {
+        const text = duplicateToolLoopMessage(executionLogs);
+        onProgress?.({ type: 'chunk', data: { text } });
+        return { text, logs: executionLogs };
       }
       if (exhaustedToolBudget) {
         const text = toolBudgetExhaustedMessage(executionLogs);
@@ -860,6 +968,8 @@ async function callRoadQwen(messages: any[], modelName: string, executionLogs: a
       if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
       let turn = 0;
+      const seenToolCalls = new Map<string, any>(); // dedupe identical tool+args calls within this turn (see executeToolDeduped)
+      const duplicateCallStrikes = { count: 0 }; // circuit breaker: force-stop after DUPLICATE_CALL_STRIKE_LIMIT repeats
       while (data.choices && data.choices[0]?.message?.tool_calls && turn < MAX_TOOL_TURNS) {
         turn++;
         const assistantMsg = data.choices[0].message;
@@ -875,7 +985,7 @@ async function callRoadQwen(messages: any[], modelName: string, executionLogs: a
           safeConsoleLog(`[Qwen Tool] Calling Parallel: ${toolName}`, toolArgs);
           onProgress?.({ type: 'tool_start', data: { toolName, toolArgs } });
 
-          const result = await executeTool(toolName, toolArgs, onProgress as any);
+          const result = await executeToolDeduped(toolName, toolArgs, onProgress, seenToolCalls, duplicateCallStrikes);
 
           db.addLog({ timestamp: new Date().toISOString(), toolName, args: toolArgs, result });
           executionLogs.push({ toolName, args: toolArgs, result });
@@ -890,6 +1000,7 @@ async function callRoadQwen(messages: any[], modelName: string, executionLogs: a
 
         const toolResponses = await Promise.all(toolPromises);
         reqMessages.push(...(toolResponses as any));
+        if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT) break;
 
         resp = await robustFetch(`${baseUrl}/chat/completions`, {
           method: "POST",
@@ -914,6 +1025,11 @@ async function callRoadQwen(messages: any[], modelName: string, executionLogs: a
       if (responseText && responseText.trim()) {
         onProgress?.({ type: 'chunk', data: { text: responseText } });
         return { text: responseText, logs: executionLogs };
+      }
+      if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT) {
+        const text = duplicateToolLoopMessage(executionLogs);
+        onProgress?.({ type: 'chunk', data: { text } });
+        return { text, logs: executionLogs };
       }
       if (stillWantsTools) {
         // Same fix as the other providers: ran out of MAX_TOOL_TURNS while the
@@ -970,6 +1086,8 @@ async function callCloudFerro(messages: any[], modelName: string, executionLogs:
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
   let turn = 0;
+  const seenToolCalls = new Map<string, any>(); // dedupe identical tool+args calls within this turn (see executeToolDeduped)
+  const duplicateCallStrikes = { count: 0 }; // circuit breaker: force-stop after DUPLICATE_CALL_STRIKE_LIMIT repeats
   while (data.choices && data.choices[0]?.message?.tool_calls && turn < MAX_TOOL_TURNS) {
     turn++;
     const assistantMsg = data.choices[0].message;
@@ -985,7 +1103,7 @@ async function callCloudFerro(messages: any[], modelName: string, executionLogs:
       safeConsoleLog(`[CloudFerro Tool] Calling Parallel: ${toolName}`, toolArgs);
       onProgress?.({ type: 'tool_start', data: { toolName, toolArgs } });
 
-      const result = await executeTool(toolName, toolArgs, onProgress as any);
+      const result = await executeToolDeduped(toolName, toolArgs, onProgress, seenToolCalls, duplicateCallStrikes);
 
       db.addLog({ timestamp: new Date().toISOString(), toolName, args: toolArgs, result });
       executionLogs.push({ toolName, args: toolArgs, result });
@@ -1000,6 +1118,7 @@ async function callCloudFerro(messages: any[], modelName: string, executionLogs:
 
     const toolResponses = await Promise.all(toolPromises);
     reqMessages.push(...(toolResponses as any));
+    if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT) break;
 
     resp = await robustFetch(`${baseUrl}/chat/completions`, {
       method: "POST",
@@ -1021,6 +1140,14 @@ async function callCloudFerro(messages: any[], modelName: string, executionLogs:
 
   const stillWantsTools = !!(data.choices && data.choices[0]?.message?.tool_calls);
   const responseText = data.choices && data.choices[0]?.message?.content ? data.choices[0].message.content : "";
+  if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT && (!responseText || !responseText.trim())) {
+    // Loop was force-stopped by the circuit breaker (model kept repeating an
+    // identical tool call), not a real empty response or a genuine turn-budget
+    // exhaustion. Ground the answer in whatever the repeated tool actually returned.
+    const text = duplicateToolLoopMessage(executionLogs);
+    onProgress?.({ type: 'chunk', data: { text } });
+    return { text, logs: executionLogs };
+  }
   if (!responseText || !responseText.trim()) {
     if (stillWantsTools) {
       // Loop exited because MAX_TOOL_TURNS ran out while the model was still trying
