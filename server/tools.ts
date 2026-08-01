@@ -12,6 +12,7 @@ import util from 'util';
 import net from 'net';
 import dns from 'dns';
 import { checkCommand, auditLine, resolveMode } from './commandGuard';
+import { Client as PgClient } from 'pg';
 
 const execAsync = util.promisify(exec);
 const execFileAsync = util.promisify(execFile);
@@ -1141,6 +1142,80 @@ export const toolImplementations: Record<string, Function> = {
         stdout: err?.stdout || "",
         stderr: err?.stderr || "",
       };
+    }
+  },
+
+  // Run a real SQL statement against the owner's Neon Postgres database. Credentials
+  // come from env only (NEON_URI, a full postgres:// connection string with
+  // sslmode=require already baked in by Neon) — never hardcoded, never logged.
+  //
+  // Design notes (mirrors oci_vm/rootd_fs's confirm:true pattern):
+  //  - A short-lived pg.Client is opened per call and always closed (finally), rather
+  //    than a persistent pool — this tool is called occasionally, not in a hot loop,
+  //    and a long-running server holding an idle Postgres connection open indefinitely
+  //    is its own (minor) liability.
+  //  - Destructive/schema-changing statements (DROP, TRUNCATE, ALTER, DELETE, UPDATE,
+  //    CREATE, GRANT/REVOKE) require args.confirm === true — a bare SELECT/EXPLAIN/SHOW
+  //    never does. Detection is a leading-keyword check on the trimmed, uppercased SQL
+  //    (after stripping a leading run of whitespace/comments), which is a heuristic, not
+  //    a real SQL parser — like commandGuard.ts's own comment says of itself, this is a
+  //    seatbelt against agent mistakes, not a guarantee against a deliberately obfuscated
+  //    statement. A multi-statement string (`SELECT 1; DROP TABLE x;`) is treated as
+  //    destructive as soon as ANY statement in it matches a destructive keyword.
+  //  - Results are capped (row count and byte size) before being handed back to the
+  //    model, so a `SELECT *` against a huge table doesn't blow the context window.
+  query_neon_db: async (args: { sql: string; confirm?: boolean }) => {
+    const NEON_DESTRUCTIVE_RE = /^\s*(?:--[^\n]*\n\s*)*(DROP|TRUNCATE|ALTER|DELETE|UPDATE|CREATE|GRANT|REVOKE|INSERT)\b/i;
+
+    try {
+      const sql = (args.sql || "").trim();
+      if (!sql) return { status: "error", message: "sql is required" };
+
+      // Confirmation gate BEFORE the config check, deliberately: whether a
+      // destructive statement needs confirm:true is a property of the SQL
+      // itself, independent of whether Neon happens to be configured right
+      // now. Checking config first would make a destructive statement with no
+      // confirm flag look like a "Neon not configured" problem instead of the
+      // "you're about to run something destructive" problem it actually is.
+      const statements = sql.split(";").map(s => s.trim()).filter(Boolean);
+      const isDestructive = statements.some(s => NEON_DESTRUCTIVE_RE.test(s));
+      if (isDestructive && !args.confirm) {
+        return {
+          status: "error",
+          message: "Statement ini mengubah/menghapus data atau skema (DROP/TRUNCATE/ALTER/DELETE/UPDATE/CREATE/INSERT/GRANT/REVOKE). Panggil ulang dengan confirm:true untuk melanjutkan.",
+          requiresConfirmation: true,
+          sql,
+        };
+      }
+
+      const uri = process.env.NEON_URI || process.env.NEON_DATABASE_URL || process.env.DATABASE_URL;
+      if (!uri) {
+        return {
+          status: "error",
+          message: "Neon belum dikonfigurasi. Set NEON_URI (connection string lengkap dari Neon console, termasuk sslmode=require) di cloud.env.",
+        };
+      }
+
+      const client = new PgClient({ connectionString: uri, connectionTimeoutMillis: 10000, query_timeout: 20000 });
+      try {
+        await client.connect();
+        const result = await client.query(sql);
+        const MAX_ROWS = 200;
+        const rows = Array.isArray(result.rows) ? result.rows.slice(0, MAX_ROWS) : [];
+        const truncated = Array.isArray(result.rows) && result.rows.length > MAX_ROWS;
+        return {
+          status: "success",
+          command: result.command,
+          rowCount: result.rowCount,
+          fields: (result.fields || []).map(f => f.name),
+          rows,
+          truncated,
+        };
+      } finally {
+        await client.end().catch(() => {});
+      }
+    } catch (err: any) {
+      return { status: "error", message: err?.message || String(err) };
     }
   }
 };

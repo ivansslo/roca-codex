@@ -3,6 +3,66 @@
 > Snapshot hasil refactor. Berisi proyek lengkap (sudah termasuk semua perubahan).
 > Tidak menyertakan: `node_modules/`, `dist/`, `.git/`, `db.json`, `sessions/`, `.env`.
 
+## 2026-08-01 — Tool baru: query_neon_db (eksekusi SQL nyata ke Neon Postgres)
+
+Diminta owner setelah "Test api dan url" Neon dikonfirmasi berfungsi
+(`NEON_API_KEY` → Neon Management API 200 OK, project `ROCAgents` terdeteksi;
+`NEON_URI` → koneksi Postgres 18.4 sukses ke database `neondb`).
+
+**`server/tools.ts`**: `query_neon_db` — menjalankan SQL apa pun terhadap
+Neon Postgres lewat `pg.Client` (koneksi baru per panggilan, selalu ditutup
+di `finally`, bukan pool persisten). Statement yang mengubah data/skema
+(`DROP`, `TRUNCATE`, `ALTER`, `DELETE`, `UPDATE`, `CREATE`, `INSERT`,
+`GRANT`, `REVOKE`) WAJIB `confirm:true` — mengikuti pola `oci_vm`
+terminate / `rootd_fs` rm+purge yang sudah ada. Deteksi destruktif dicek
+per-statement (string dipisah `;`) supaya statement destruktif yang
+"disembunyikan" setelah statement aman di awal tetap tertangkap. Hasil
+dibatasi 200 baris sebelum dikirim ke model, supaya `SELECT *` ke tabel
+besar tidak membanjiri context window.
+
+**`server/db.ts`**: skema tool `query_neon_db` didaftarkan, dengan
+instruksi eksplisit ke model untuk tidak mengasumsikan owner ingin
+mengubah data tanpa `confirm:true`, dan melaporkan hasil tool apa adanya
+(tidak mengarang baris/skema).
+
+**`package.json`**: `pg` + `@types/pg` ditambahkan sebagai dependency.
+
+**`docs/cloud.env.template`**: `NEON_URI`/`NEON_API_KEY` (sudah ada
+sebagai rujukan sebelumnya) diberi catatan bahwa `NEON_URI` sekarang
+benar-benar dipakai `query_neon_db`.
+
+**`server/__tests__/neonDb.test.ts`** (baru, 16 kasus): validasi
+parameter, tolak statement destruktif tanpa `confirm` untuk kesembilan
+jenis keyword, deteksi statement destruktif tersembunyi di posisi kedua
+dalam string multi-statement, statement read-only tidak salah terdeteksi
+destruktif, `confirm:true` benar-benar melewati gate destruktif menuju
+langkah koneksi. Tidak menjalankan query nyata (NEON_URI sengaja tidak
+di-set) — konsisten dengan `ociVmRootdFs.test.ts`.
+
+**Bug ditemukan & diperbaiki selama pengembangan**: urutan pengecekan
+semula salah — cek `NEON_URI` dilakukan SEBELUM cek destruktif, sehingga
+statement destruktif tanpa `confirm` di lingkungan tanpa `NEON_URI`
+malah dilaporkan "Neon belum dikonfigurasi", bukan "butuh confirm:true"
+— pesan yang menyesatkan (masalah sebenarnya adalah permintaan
+konfirmasi, bukan konfigurasi). Ditemukan lewat test yang gagal
+(10 dari 16 kasus awal), diperbaiki dengan menukar urutan kedua
+pengecekan, konsisten dengan alasan bahwa kebutuhan `confirm:true`
+adalah properti dari SQL itu sendiri, bukan tergantung status konfigurasi.
+
+**Diverifikasi live** terhadap database Neon asli owner (bukan mock):
+`SELECT` sederhana (versi/database/user), list tabel (cocok dengan hasil
+tes konektivitas awal — skema `neon_auth` berisi 9 tabel), `CREATE TABLE`
+tanpa `confirm` ditolak, `CREATE TABLE` dengan `confirm:true` berhasil
+membuat tabel nyata, diverifikasi ulang tabel benar-benar ada, lalu
+`DROP TABLE` dengan `confirm:true` menghapusnya, diverifikasi ulang
+tabel benar-benar hilang — database dikembalikan bersih tanpa sisa data uji.
+
+Verifikasi:
+- `npx tsc --noEmit` → 0 error.
+- `npx vite build` → sukses.
+- `npm test` → 7 suite, 150 kasus (69+9+17+14+14+16+11), 0 gagal, tanpa
+  regresi pada 134 kasus lama.
+
 ## 2026-08-01 — Fix: model mengulang tool identik berkali-kali tanpa progres (dedup + circuit breaker)
 
 Ditemukan owner lewat log nyata: model (dikonfirmasi live pada CloudFerro

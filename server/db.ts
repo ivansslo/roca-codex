@@ -326,6 +326,18 @@ const DEFAULT_SCHEMA: DatabaseSchema = {
         },
         required: ["subcommand"]
       }
+    },
+    {
+      name: "query_neon_db",
+      description: "Run a REAL SQL statement against the owner's Neon Postgres database (NEON_URI). Use for questions about data stored there, or to read/write/modify rows and schema on explicit request. Plain SELECT/EXPLAIN/SHOW run immediately; any statement that changes data or schema (DROP, TRUNCATE, ALTER, DELETE, UPDATE, CREATE, INSERT, GRANT, REVOKE) requires confirm:true or it is refused with requiresConfirmation:true — never assume the owner meant to modify data without that flag. Results are capped at 200 rows; report what the tool actually returned, never invent rows or schema you did not see.",
+      parameters: {
+        type: "object",
+        properties: {
+          sql: { type: "string", description: "The SQL statement to run, e.g. 'SELECT * FROM users LIMIT 10;'." },
+          confirm: { type: "boolean", description: "Must be true to actually run a destructive/schema-changing statement (DROP/TRUNCATE/ALTER/DELETE/UPDATE/CREATE/INSERT/GRANT/REVOKE)." }
+        },
+        required: ["sql"]
+      }
     }
   ],
   logs: [],
