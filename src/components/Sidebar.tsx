@@ -57,14 +57,17 @@ export function Sidebar({
         </div>
         <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
           {availableModels.map((m) => {
-            const sel = selectedModel === m.id;
+            // Matched on (id, provider) together, not id alone — see the
+            // identical note in Header.tsx/ModelQuickSwitch.tsx: different
+            // providers can expose the same upstream model id.
+            const sel = selectedModel === m.id && selectedProvider === m.provider;
             // Model tanpa kunci API tetap ditampilkan supaya terlihat apa saja
             // yang tersedia bila dikonfigurasi, tetapi tidak bisa dipilih —
             // memilihnya hanya menghasilkan kegagalan tanpa penjelasan.
             const usable = m.active !== false;
             return (
               <button
-                key={m.id}
+                key={`${m.provider}:${m.id}`}
                 onClick={() => usable && onSelectModel(m)}
                 disabled={!usable}
                 title={usable ? m.name : (m.reason || `Tidak ada kunci API untuk ${m.provider}`)}

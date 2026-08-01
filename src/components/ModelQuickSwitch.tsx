@@ -11,7 +11,12 @@ interface ModelQuickSwitchProps {
 export function ModelQuickSwitch({ availableModels, selectedModel, selectedProvider, onSelectModel }: ModelQuickSwitchProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const current = availableModels.find(m => m.id === selectedModel);
+  // Matched on (id, provider) together, not id alone — see the identical note
+  // in Header.tsx: different providers can expose the same upstream model id
+  // (e.g. CloudFerro Sherlock's "openai/gpt-oss-120b" vs Groq's own catalog
+  // entry of the same id), and id-only matching would silently display/select
+  // the wrong provider's entry.
+  const current = availableModels.find(m => m.id === selectedModel && m.provider === selectedProvider);
 
   useEffect(() => {
     if (!open) return;
@@ -50,10 +55,14 @@ export function ModelQuickSwitch({ availableModels, selectedModel, selectedProvi
             <div key={provider} className="mb-1">
               <div className="px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-indigo-400/70">{provider}</div>
               {models.map(m => {
-                const active = m.id === selectedModel;
+                // Within this provider's own group, m.provider === provider already,
+                // so checking id here is equivalent to checking (id, provider) — but
+                // selectedProvider is still needed to decide THIS is the active group
+                // rather than a same-id entry belonging to a different provider group.
+                const active = m.id === selectedModel && provider === selectedProvider;
                 return (
                   <button
-                    key={m.id}
+                    key={`${provider}:${m.id}`}
                     type="button"
                     onClick={() => { onSelectModel(m); setOpen(false); }}
                     className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${active ? 'bg-indigo-600/15' : 'hover:bg-theme-btn-hover'}`}

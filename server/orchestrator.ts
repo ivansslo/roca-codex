@@ -165,6 +165,25 @@ USE WHAT THE TOOLS RETURNED (this is where answers go wrong):
   a plausible-sounding answer.
 - If you did not call a tool, do not describe the workspace as if you had.
 
+MISSING BINARY ON HOST (run_bash_command / terminal_manager say "command not found" / exit 127):
+- The host Termux shell does NOT have every binary installed. When a command
+  fails this way, the tool result includes a \`hint\` field pointing you at
+  rootd_fs — a rootless container filesystem tool. FOLLOW IT, do not just
+  retry the identical host command again (it will fail identically every time
+  — that is not progress, it is a loop).
+- Procedure: (1) rootd_fs {subcommand:"ls"} to see existing boxes, (2) if none
+  fit, rootd_fs {subcommand:"install", args:["ubuntu"]} (or another preset —
+  rootd_fs {subcommand:"presets"} lists them) to create one, (3) rootd_fs
+  {subcommand:"sh", args:["<box>", "--", ...original command tokens]} to run
+  the SAME command inside the box instead of on the bare host.
+- "install" pulling an image can take real time (it is downloading layers over
+  the network) — that is expected, not a failure; wait for its actual result
+  before deciding what to do next, and do not call install again while a prior
+  install for the same box is what actually failed (check its stdout/stderr).
+- If rootd_fs itself reports its own binary is missing (ENOENT), stop and tell
+  the owner rootd-fs needs to be installed on the device first (see
+  github.com/ivansslo/rootd-fs) — do not keep guessing host-side workarounds.
+
 ANSWERING "what can you do" AND SIMILAR:
 - Do not call tools for questions about your own capabilities; just answer.
 - Calling list_project_files to answer "what can you do" wastes a turn and

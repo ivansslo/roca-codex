@@ -121,7 +121,13 @@ export default function App() {
         const pool = usable.length ? usable : data.models;
 
         const saved = localStorage.getItem('ROC_MODEL');
-        const found = saved && pool.find((m: any) => m.id === saved);
+        const savedProvider = localStorage.getItem('ROC_PROVIDER');
+        // Matched on (id, provider) together, not id alone: different
+        // providers can expose the same upstream model id (e.g. CloudFerro
+        // Sherlock's "openai/gpt-oss-120b" vs Groq's own catalog entry of the
+        // same id) — id-only matching could silently restore the WRONG saved
+        // provider's entry after a page reload if two providers share an id.
+        const found = saved && pool.find((m: any) => m.id === saved && (savedProvider ? m.provider === savedProvider : true));
         // Dahulukan model milik provider aktif, baru model apa pun yang usable.
         const preferred = pool.find((m: any) => m.provider === data.active_provider) || pool[0];
         const pick = found || preferred;
@@ -325,6 +331,7 @@ export default function App() {
           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
           availableModels={availableModels}
           selectedModel={selectedModel}
+          selectedProvider={selectedProvider}
           activeTab={activeTab}
           onNavigateTab={selectTab}
           terminalOpen={terminalOpen}

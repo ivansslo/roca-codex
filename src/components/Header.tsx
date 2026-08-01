@@ -7,6 +7,7 @@ interface HeaderProps {
   onToggleSidebar: () => void;
   availableModels: any[];
   selectedModel: string;
+  selectedProvider: string;
   activeTab: NavTab;
   onNavigateTab: (tab: NavTab) => void;
   terminalOpen: boolean;
@@ -24,7 +25,14 @@ interface HeaderProps {
 }
 
 export function Header(p: HeaderProps) {
-  const activeModel = p.availableModels.find(m => m.id === p.selectedModel);
+  // Matched on (id, provider) together, not id alone: different providers can
+  // legitimately expose the SAME upstream model id (e.g. CloudFerro Sherlock's
+  // "openai/gpt-oss-120b" is the identical string Groq already uses for its
+  // own gpt-oss-120b catalog entry) — id-only matching would silently show/
+  // pick whichever entry happens to come first in the array, which is a
+  // provider mix-up, not just a cosmetic label glitch (the request actually
+  // gets billed/sent to the wrong account).
+  const activeModel = p.availableModels.find(m => m.id === p.selectedModel && m.provider === p.selectedProvider);
   return (
     <header className="h-16 border-b border-theme-border flex items-center justify-between px-4 bg-slate-950/60 backdrop-blur-md">
       <div className="flex items-center gap-3">

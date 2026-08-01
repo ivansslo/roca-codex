@@ -577,6 +577,55 @@ function detectEncryptedFormat(buf: Buffer): 'rocvault' | 'gpg' | 'openssl' | 'z
   return 'unknown';
 }
 
+// --- run_bash_command: "binary not found" -> actionable rootd_fs hint --------
+//
+// WHY THIS EXISTS: observed live — the host lacks some binary (docker, a
+// language runtime, an odd package not in Termux's repo, etc.), the agent's
+// run_bash_command call fails with "command not found" / exit 127, and rather
+// than doing something DIFFERENT the agent kept re-issuing near-identical
+// run_bash_command / rootd_fs calls hunting for a fix by trial and error until
+// the orchestrator's duplicate-call circuit breaker force-stopped the turn
+// ("mendeteksi diri saya memanggil tool yang SAMA PERSIS berulang kali").
+// That circuit breaker (server/orchestrator.ts) is a correct backstop against
+// runaway loops, but it doesn't teach the agent the right next move — it just
+// cuts the loop short. This is the actual fix: the moment run_bash_command's
+// own output looks like a missing-binary failure, the tool result carries an
+// explicit, structured `hint` pointing at rootd_fs (a real Ubuntu/Debian/
+// Alpine/etc. rootless container filesystem, see github.com/ivansslo/rootd-fs)
+// instead of the host shell — so the agent's very first retry is a genuine
+// fix (install a box, run the command inside it), not a repeat of a command
+// that can only ever fail identically on the host.
+//
+// Matches the shapes both `sh -c` (POSIX "command not found") and bash itself
+// ("bash: <cmd>: command not found", or bash's own "No such file or
+// directory" when a full path was given) actually produce — verified against
+// real `sh`/`bash` output for a nonexistent binary, not assumed from memory.
+// Used only as a fallback when no reliable exit code is available (e.g. a
+// caller that didn't capture one) — the exit-code check below is preferred
+// because it can't false-positive the way text matching can (a plain
+// `cat missing-file.txt` also prints "No such file or directory" but exits
+// 1, not 127, and is not a missing BINARY at all).
+const MISSING_BINARY_RE = /(command not found|not found\s*$|is not recognized as an internal or external command)/im;
+
+// code 127 is the shell's own reserved "command not found" exit status
+// (POSIX; both dash/sh and bash use it consistently) — checked FIRST because
+// it is a hard signal, unlike matching error text which can false-positive on
+// unrelated "No such file or directory" messages (e.g. a missing input file
+// argument, not a missing program). code 126 ("found but not executable",
+// e.g. a permission error or a non-executable regular file) is deliberately
+// NOT treated as "missing" — installing a container box would not fix that.
+function detectMissingBinaryHint(command: string, stdout: string, stderr: string, exitCode?: number | null): string | undefined {
+  const combined = `${stdout}\n${stderr}`;
+  const looksMissing = exitCode === 127 || MISSING_BINARY_RE.test(combined);
+  if (!looksMissing) return undefined;
+  // Best-effort extraction of the missing program's name from the error text
+  // (sh: "sh: 1: <name>: not found", bash: "bash: <name>: command not found"),
+  // falling back to the first whitespace-delimited token of the command itself.
+  const nameMatch = combined.match(/(?:^|:\s*)([^\s:][^\s:]*?):\s*(?:command )?not found/im);
+  const missing = nameMatch?.[1] || command.trim().split(/\s+/)[0] || "(perintah)";
+  return `Binary '${missing}' tidak ada di host Termux ini. JANGAN ulangi command host yang sama — itu akan gagal identik setiap kali. Sebagai gantinya: (1) 'rootd_fs' dengan subcommand 'ls' untuk lihat box yang sudah ada, (2) kalau belum ada box yang cocok, 'rootd_fs' subcommand 'install' dengan args ['ubuntu'] (atau preset lain yang punya '${missing}': lihat 'rootd_fs' subcommand 'presets'), (3) jalankan command yang sama di dalam box lewat 'rootd_fs' subcommand 'sh' dengan args ['<box>', '--', ...command asli tanpa diubah]. 'rootd install' bisa makan waktu (menarik image), itu wajar — tunggu hasilnya, jangan dianggap gagal dan diulang.`;
+}
+
 export const toolImplementations: Record<string, Function> = {
   list_project_files: async () => {
     try {
@@ -800,7 +849,18 @@ export const toolImplementations: Record<string, Function> = {
         const out = String(e2.stdout || "");
         const errStr = String(e2.stderr || e2.message || "");
         _onProgress?.({ type: 'tool_output', data: { toolName: 'run_bash_command', stdout: out, stderr: errStr } });
-        return { status: "error", message: String(e2.message || "Execution error"), stdout: out, stderr: errStr };
+        // e2.code is the shell's numeric exit code for exec()-based failures
+        // (only ENOENT-style string codes come from spawn(), not exec()) — see
+        // detectMissingBinaryHint's comment on why 127 is checked first.
+        const exitCode = typeof e2.code === 'number' ? e2.code : undefined;
+        const hint = detectMissingBinaryHint(cleanCommand, out, errStr, exitCode);
+        return {
+          status: "error",
+          message: String(e2.message || "Execution error"),
+          stdout: out,
+          stderr: errStr,
+          ...(hint ? { hint } : {}),
+        };
       }
     } catch (err: any) {
       return { status: "error", message: err.message };
@@ -944,14 +1004,19 @@ export const toolImplementations: Record<string, Function> = {
 
       const timeout = args.timeout || 30000;
       const env = { ...process.env, PATH: process.env.PATH || "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" };
-      let stdout = "", stderr = "";
+      let stdout = "", stderr = "", exitCode: number | undefined;
       try {
         const res = await execAsync(cmd, { timeout, maxBuffer: 1024 * 1024 * 10, env } as any);
         stdout = String(res.stdout || ""); stderr = String(res.stderr || "");
       } catch (e: any) {
         stdout = String(e.stdout || ""); stderr = String(e.stderr || e.message || "");
+        exitCode = typeof e.code === 'number' ? e.code : undefined;
       }
-      return { status: "success", command: cmd, stdout: stdout.substring(0, 20000), stderr: stderr.substring(0, 5000), timestamp: new Date().toISOString() };
+      const hint = detectMissingBinaryHint(cmd, stdout, stderr, exitCode);
+      return {
+        status: "success", command: cmd, stdout: stdout.substring(0, 20000), stderr: stderr.substring(0, 5000), timestamp: new Date().toISOString(),
+        ...(hint ? { hint } : {}),
+      };
     } catch (err: any) {
       return { status: "error", error: err.message, stdout: err.stdout?.substring(0, 10000) || "", stderr: err.stderr?.substring(0, 5000) || "", command: args.command };
     }
