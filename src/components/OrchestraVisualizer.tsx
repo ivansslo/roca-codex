@@ -55,7 +55,7 @@ const AGENT_LIBRARY: Record<AgentRole, AgentNode> = {
     avatar: '🛠️',
     icon: Hammer,
     description: 'Takes initiative and executes for real: writes/edits/patches files, runs builds/installs, mods the project — no clarifying questions, decisive action.',
-    capabilities: ['write_project_file', 'edit_project_file', 'run_bash_command', 'terminal_manager'],
+    capabilities: ['write_project_file', 'edit_project_file', 'exec', 'terminal_manager'],
   },
   breaker: {
     id: 'breaker',
@@ -65,7 +65,7 @@ const AGENT_LIBRARY: Record<AgentRole, AgentNode> = {
     avatar: '🕵️',
     icon: ShieldAlert,
     description: 'Tries to break what Builder just produced — injection, auth bypass, secret exposure, path traversal, SSRF — validated with real tool checks, not guesses.',
-    capabilities: ['search_codebase', 'run_bash_command', 'read_project_file', 'OWASP-style review'],
+    capabilities: ['search_codebase', 'exec', 'read_project_file', 'OWASP-style review'],
   },
   closer: {
     id: 'closer',
@@ -95,7 +95,7 @@ const AGENT_LIBRARY: Record<AgentRole, AgentNode> = {
     avatar: '💻',
     icon: Code2,
     description: 'Implements the Architect blueprint for real — writes/edits files and runs builds, not just markdown code blocks.',
-    capabilities: ['write_project_file', 'edit_project_file', 'run_bash_command', 'terminal_manager'],
+    capabilities: ['write_project_file', 'edit_project_file', 'exec', 'terminal_manager'],
   },
   pentester: {
     id: 'pentester',
@@ -105,7 +105,7 @@ const AGENT_LIBRARY: Record<AgentRole, AgentNode> = {
     avatar: '🛡️',
     icon: ShieldAlert,
     description: 'Audits the Developer\'s real output against OWASP Top 10 and assigns an explicit security score.',
-    capabilities: ['read_project_file', 'search_codebase', 'run_bash_command', '[ SCORE ]'],
+    capabilities: ['read_project_file', 'search_codebase', 'exec', '[ SCORE ]'],
   },
   qa: {
     id: 'qa',
@@ -115,7 +115,7 @@ const AGENT_LIBRARY: Record<AgentRole, AgentNode> = {
     avatar: '🧪',
     icon: FlaskConical,
     description: 'Writes/validates regression tests, reports coverage, and assigns a release tag and final verdict.',
-    capabilities: ['write_project_file', 'run_bash_command', '[ COVERAGE ]', '[ RELEASE ]'],
+    capabilities: ['write_project_file', 'exec', '[ COVERAGE ]', '[ RELEASE ]'],
   },
 };
 

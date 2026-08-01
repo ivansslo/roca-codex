@@ -309,7 +309,7 @@ function ExecutionCard({ log }: { log: any }) {
 
   const isWriteFile = log.toolName === 'write_project_file' || log.toolName === 'create_file';
   const isReadFile = log.toolName === 'read_project_file' || log.toolName === 'read_file';
-  const isBash = log.toolName === 'run_bash_command' || log.toolName === 'shell';
+  const isBash = log.toolName === 'exec' || log.toolName === 'shell';
   const isSnowflake = log.toolName === 'query_snowflake_insight';
 
   if (isBash) {
@@ -402,7 +402,7 @@ function ExecutionLogsGroup({ logs }: { logs: any[] }) {
   if (!Array.isArray(logs) || logs.length === 0) return null;
 
   const has = (...names: string[]) => logs.filter(l => names.includes(l?.toolName));
-  const bashLogs = has('run_bash_command', 'shell', 'terminal_manager');
+  const bashLogs = has('exec', 'shell', 'terminal_manager');
   const readLogs = has('read_project_file', 'read_file');
   const editLogs = has('write_project_file', 'create_file', 'edit_file', 'edit_project_file');
   const searchLogs = has('search_codebase');

@@ -190,7 +190,7 @@ const DEFAULT_SCHEMA: DatabaseSchema = {
       }
     },
     {
-      name: "run_bash_command",
+      name: "exec",
       description: "Run a bash command in the terminal and return stdout/stderr.",
       parameters: {
         type: "object",

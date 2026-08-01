@@ -577,18 +577,18 @@ function detectEncryptedFormat(buf: Buffer): 'rocvault' | 'gpg' | 'openssl' | 'z
   return 'unknown';
 }
 
-// --- run_bash_command: "binary not found" -> actionable rootd_fs hint --------
+// --- exec: "binary not found" -> actionable rootd_fs hint --------
 //
 // WHY THIS EXISTS: observed live — the host lacks some binary (docker, a
 // language runtime, an odd package not in Termux's repo, etc.), the agent's
-// run_bash_command call fails with "command not found" / exit 127, and rather
+// exec call fails with "command not found" / exit 127, and rather
 // than doing something DIFFERENT the agent kept re-issuing near-identical
-// run_bash_command / rootd_fs calls hunting for a fix by trial and error until
+// exec / rootd_fs calls hunting for a fix by trial and error until
 // the orchestrator's duplicate-call circuit breaker force-stopped the turn
 // ("mendeteksi diri saya memanggil tool yang SAMA PERSIS berulang kali").
 // That circuit breaker (server/orchestrator.ts) is a correct backstop against
 // runaway loops, but it doesn't teach the agent the right next move — it just
-// cuts the loop short. This is the actual fix: the moment run_bash_command's
+// cuts the loop short. This is the actual fix: the moment exec's
 // own output looks like a missing-binary failure, the tool result carries an
 // explicit, structured `hint` pointing at rootd_fs (a real Ubuntu/Debian/
 // Alpine/etc. rootless container filesystem, see github.com/ivansslo/rootd-fs)
@@ -785,12 +785,12 @@ export const toolImplementations: Record<string, Function> = {
     return await toolImplementations.edit_file(args);
   },
 
-  run_bash_command: async (args: { command: string }, _onProgress?: ToolProgressCallback) => {
+  exec: async (args: { command: string }, _onProgress?: ToolProgressCallback) => {
     try {
       const cleanCommand = unescapeHtml(args.command || "");
 
       // Guard AFTER unescaping: inspect exactly what the shell will receive.
-      const blocked = guardShell('run_bash_command', cleanCommand);
+      const blocked = guardShell('exec', cleanCommand);
       if (blocked) return blocked;
 
       // Ensure Termux native binary path is included in PATH
@@ -829,7 +829,7 @@ export const toolImplementations: Record<string, Function> = {
           );
           const outStr = String(stdout || "");
           const errStr = String(stderr || "");
-          _onProgress?.({ type: 'tool_output', data: { toolName: 'run_bash_command', stdout: outStr, stderr: errStr } });
+          _onProgress?.({ type: 'tool_output', data: { toolName: 'exec', stdout: outStr, stderr: errStr } });
           return { status: "success", stdout: outStr, stderr: errStr };
         } catch (e1: any) {
           // If PRoot execution fails, proceed immediately to native Termux execution
@@ -843,12 +843,12 @@ export const toolImplementations: Record<string, Function> = {
         const { stdout, stderr } = await execAsync(cleanCommand, opts);
         const outStr = String(stdout || "");
         const errStr = String(stderr || "");
-        _onProgress?.({ type: 'tool_output', data: { toolName: 'run_bash_command', stdout: outStr, stderr: errStr } });
+        _onProgress?.({ type: 'tool_output', data: { toolName: 'exec', stdout: outStr, stderr: errStr } });
         return { status: "success", stdout: outStr, stderr: errStr };
       } catch (e2: any) {
         const out = String(e2.stdout || "");
         const errStr = String(e2.stderr || e2.message || "");
-        _onProgress?.({ type: 'tool_output', data: { toolName: 'run_bash_command', stdout: out, stderr: errStr } });
+        _onProgress?.({ type: 'tool_output', data: { toolName: 'exec', stdout: out, stderr: errStr } });
         // e2.code is the shell's numeric exit code for exec()-based failures
         // (only ENOENT-style string codes come from spawn(), not exec()) — see
         // detectMissingBinaryHint's comment on why 127 is checked first.
@@ -1341,14 +1341,6 @@ export const toolImplementations: Record<string, Function> = {
 
   // Run a command on the LOCAL DEVICE via its SSH daemon (jazzm0/ssh-daemon / SimpleSSHD).
   // Configured in Settings → SSH. Returns REAL stdout/stderr.
-  ssh_run: async (args: { command: string }) => {
-    const cmd = unescapeHtml(args.command || "");
-    // Remote execution is guarded too: the target host is the user's own VM.
-    const blocked = guardShell('ssh_run', cmd);
-    if (blocked) return blocked;
-    return await sshExec(cmd);
-  },
-
   // Manage Oracle Cloud Infrastructure compute instances (create/modify/destroy a VM)
   // using the oci-cli already installed and configured on the device (~/.oci/config —
   // never read or transmitted by RocAgent itself, oci-cli reads it directly).
@@ -1357,14 +1349,14 @@ export const toolImplementations: Record<string, Function> = {
   //  - Every call is built as an argv ARRAY and run with execFile, never a shell
   //    string — so nothing the model puts into a parameter value (instance name,
   //    shape, etc.) can break out via ; | & $() backticks the way it could with a
-  //    shell string. This is a stronger guarantee than run_bash_command's guard,
+  //    shell string. This is a stronger guarantee than exec's guard,
   //    which has to *detect* shell metacharacters after the fact.
   //  - The oci CLI subcommand is restricted to a fixed allowlist (OCI_ACTIONS below)
   //    — arbitrary `oci <anything>` is not exposed, only the specific compute-instance
   //    lifecycle operations this tool documents.
   //  - guardShell() still runs first (on the equivalent shell-quoted command string)
   //    purely for the shared audit log (server/commandGuard.ts auditLine) and so a
-  //    SHELL_GUARD=enforce lockdown also covers this tool, not just run_bash_command.
+  //    SHELL_GUARD=enforce lockdown also covers this tool, not just exec.
   //  - `terminate` is destructive and irreversible (unless the boot volume was kept),
   //    so it additionally requires the caller to pass confirm: true — a plain
   //    "terminate this VM" tool call without that flag is rejected with an
@@ -1766,3 +1758,12 @@ export const toolImplementations: Record<string, Function> = {
     }
   }
 };
+  python_venv_search: async (args: { pkg: string; install?: boolean }) => {
+    try {
+      const cmd = args.install ? `python3 -m venv .venv && . .venv/bin/activate && pip install ${args.pkg}` : `python3 -m venv .venv && . .venv/bin/activate && pip search ${args.pkg}`;
+      const { stdout } = await execAsync(cmd, { timeout: 30000 });
+      return { status: "ok", pkg: args.pkg, output: stdout, hint: "Jika gagal, gunakan rootd_fs install ubuntu / python" };
+    } catch (e: any) {
+      return { status: "error", pkg: args.pkg, message: e.message, fallback: "rootd_fs {subcommand:'install', args:['python']}" };
+    }
+  }
