@@ -6,12 +6,15 @@
  */
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
+import zlib from 'zlib';
+import { spawn } from 'child_process';
 import { db } from './db';
 import { exec, execFile } from 'child_process';
 import util from 'util';
 import net from 'net';
 import dns from 'dns';
-import { checkCommand, auditLine, resolveMode } from './commandGuard';
+import { checkCommand, auditLine, resolveMode, SENSITIVE_PATH_RE } from './commandGuard';
 import { Client as PgClient } from 'pg';
 
 const execAsync = util.promisify(exec);
@@ -226,6 +229,353 @@ export async function checkUrlSafe(rawUrl: string): Promise<{ safe: boolean; rea
 // matching cannot prove arbitrary code is safe.
 const SELF_DEV_DENIED_RE =
   /(child_process|\bspawn\b|\bexec(Sync|FileSync|File)?\s*\(|\brequire\s*\(|\bimport\s*\(|\beval\s*\(|new\s+Function|\bprocess\s*[.[]|globalThis|global\s*[.[]|module\s*[.[]|__dirname|__filename|\.env\b|getenv)/i;
+
+// --- decrypt_file: multi-format decryption ----------------------------------
+//
+// Supports the encrypted-file formats an owner actually runs into day to day,
+// detected from real file structure (magic bytes / header), never from the
+// extension alone (a renamed .txt.gpg proves nothing about its contents):
+//
+//   - rocvault  (this project's own tools/rocvault openssl-based format,
+//                "ROCVAULT1" text header) — decrypted natively in-process,
+//                since the derivation/verification algorithm is fully known
+//                (PBKDF2-HMAC-SHA512 600k iters, AES-256-CBC, encrypt-then-MAC).
+//   - gpg       (OpenPGP symmetric, "Salted__"-less binary starting with the
+//                OpenPGP packet tag for symmetrically-encrypted data) — shells
+//                out to the system `gpg` binary (already required for other
+//                RocAgent flows), passphrase piped over stdin, NEVER as an
+//                argv/-passphrase flag (would leak into `ps`).
+//   - openssl   (`openssl enc`, "Salted__" 8-byte magic) — shells out to the
+//                system `openssl` binary, passphrase piped over an extra fd,
+//                same reasoning as gpg. Tries the modern default (-pbkdf2)
+//                first, then falls back to the legacy KDF (-md sha256, no
+//                -pbkdf2) some old scripts of the owner's may have used,
+//                across both AES-256-CBC and AES-128-CBC — a lot of ad-hoc
+//                `openssl enc` one-liners in the wild are AES-128.
+//   - zip       (ZipCrypto "traditional" password protection, "PK\x03\x04"
+//                magic, general-purpose bit 0 set) — decrypted natively in
+//                pure JS (no dependency added): ZipCrypto is a documented,
+//                simple stream cipher (see PKWARE APPNOTE.TXT section 6.1),
+//                small enough to implement correctly and verify locally
+//                rather than pull in a new dependency for it. AES-encrypted
+//                zips (WinZip AE-1/AE-2, general-purpose bit + extra field
+//                0x9901) are DETECTED but explicitly rejected with a clear
+//                message rather than silently mishandled, since that needs a
+//                different (AES-CTR + HMAC) code path this tool does not yet
+//                implement.
+//
+// Design mirrors query_neon_db / oci_vm / rootd_fs:
+//   - Passphrase comes in as a tool argument for this call only — never read
+//     from an env var, never logged, never written to disk. The caller (the
+//     model, on the owner's explicit instruction in chat) is expected to
+//     have asked the owner for it in that same turn.
+//   - Output path is validated the same way as every other file tool in this
+//     module (must resolve inside process.cwd(), no `..` escape) AND is
+//     additionally checked against SENSITIVE_PATH_RE from commandGuard.ts —
+//     decrypting a foreign file directly on top of, say, ~/.ssh/id_rsa would
+//     be a bizarre and dangerous thing for an agent to do on its own
+//     initiative, so that specific footgun is closed even though the rest of
+//     the workspace is otherwise writable by design (write_project_file).
+//   - Wrong passphrase is a normal, expected outcome (typo, wrong file) and
+//     is reported as status:"error" with a clear message — never thrown as
+//     an unhandled exception, never treated as "file is corrupt".
+//   - Nothing here executes a shell STRING; gpg/openssl are invoked via
+//     spawn() with a fixed argv array, so a passphrase or filename containing
+//     shell metacharacters cannot break out. guardShell() is still called
+//     first purely so the shared audit log / SHELL_GUARD=off kill switch
+//     covers this tool too, consistent with oci_vm/rootd_fs.
+
+type DecryptResult =
+  | { ok: true; plaintext: Buffer; entries?: string[] }
+  | { ok: false; message: string; entries?: string[] };
+
+// rocvault's own PBKDF2-HMAC-SHA512 / AES-256-CBC / encrypt-then-MAC format.
+// Re-implemented natively here (not by shelling out to tools/rocvault) because
+// that script prompts interactively on a TTY for confirmation steps this
+// non-interactive tool call has no way to answer, and because the algorithm
+// is simple and fully documented in tools/rocvault's own header comment.
+function decryptRocvault(buf: Buffer, passphrase: string): DecryptResult {
+  const ITER = 600000;
+  let lastNL = -1, secondLastNL = -1;
+  for (let i = buf.length - 1; i >= 0; i--) {
+    if (buf[i] === 0x0a) {
+      if (lastNL === -1) lastNL = i;
+      else { secondLastNL = i; break; }
+    }
+  }
+  if (lastNL === -1 || secondLastNL === -1) {
+    return { ok: false, message: 'Struktur berkas rocvault tidak dikenali (baris MAC tidak ditemukan).' };
+  }
+  const macHex = buf.slice(secondLastNL + 1, lastNL).toString('utf8').trim();
+  const body = buf.slice(0, secondLastNL); // header + salt + iv + ciphertext, MAC covers this
+
+  const nlPositions: number[] = [];
+  for (let i = 0; i < body.length && nlPositions.length < 3; i++) {
+    if (body[i] === 0x0a) nlPositions.push(i);
+  }
+  if (nlPositions.length < 3) {
+    return { ok: false, message: 'Header berkas rocvault tidak lengkap.' };
+  }
+  const [p1, p2, p3] = nlPositions;
+  const magic = body.slice(0, p1).toString('utf8').trim();
+  if (magic !== 'ROCVAULT1') {
+    return { ok: false, message: `Bukan berkas rocvault (header: "${magic}").` };
+  }
+  const saltHex = body.slice(p1 + 1, p2).toString('utf8').trim();
+  const ivHex = body.slice(p2 + 1, p3).toString('utf8').trim();
+  const ciphertext = body.slice(p3 + 1);
+
+  let keys: Buffer;
+  try {
+    keys = crypto.pbkdf2Sync(passphrase, Buffer.from(saltHex, 'hex'), ITER, 64, 'sha512');
+  } catch (e: any) {
+    return { ok: false, message: `Gagal menurunkan kunci dari passphrase: ${e.message}` };
+  }
+  const kenc = keys.subarray(0, 32);
+  const kmac = keys.subarray(32, 64);
+
+  const macCalc = crypto.createHmac('sha256', kmac).update(body).digest();
+  let macStored: Buffer;
+  try { macStored = Buffer.from(macHex, 'hex'); } catch { return { ok: false, message: 'MAC tersimpan tidak valid (bukan hex).' }; }
+  if (macCalc.length !== macStored.length || !crypto.timingSafeEqual(macCalc, macStored)) {
+    return { ok: false, message: 'Passphrase salah, atau berkas rocvault telah diubah/rusak (verifikasi MAC gagal).' };
+  }
+
+  try {
+    const decipher = crypto.createDecipheriv('aes-256-cbc', kenc, Buffer.from(ivHex, 'hex'));
+    const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    return { ok: true, plaintext };
+  } catch (e: any) {
+    return { ok: false, message: `Dekripsi gagal meski MAC valid (berkas rusak?): ${e.message}` };
+  }
+}
+
+// --- ZipCrypto ("traditional" zip password) ---------------------------------
+// Implements PKWARE APPNOTE.TXT section 6.1 (the classic weak stream cipher
+// every unzip/7z/zip -P uses unless AES is explicitly requested). Deliberately
+// hand-rolled instead of adding a dependency: it is ~30 lines, has no external
+// state, and is fully unit-testable against `zip -P` output directly.
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32Update(crc: number, byte: number): number {
+  return (CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8)) >>> 0;
+}
+class ZipCryptoKeys {
+  key0 = 0x12345678 >>> 0;
+  key1 = 0x23456789 >>> 0;
+  key2 = 0x34567890 >>> 0;
+  constructor(password: string) {
+    for (const b of Buffer.from(password, 'utf8')) this.update(b);
+  }
+  update(byte: number) {
+    this.key0 = crc32Update(this.key0, byte);
+    this.key1 = (Math.imul((this.key1 + (this.key0 & 0xff)) >>> 0, 134775813) + 1) >>> 0;
+    this.key2 = crc32Update(this.key2, (this.key1 >>> 24) & 0xff);
+  }
+  decryptByte(): number {
+    const temp = ((this.key2 | 2) & 0xffff) >>> 0;
+    return (Math.imul(temp, temp ^ 1) >>> 8) & 0xff;
+  }
+  decrypt(buf: Buffer): Buffer {
+    const out = Buffer.alloc(buf.length);
+    for (let i = 0; i < buf.length; i++) {
+      const c = buf[i];
+      const p = c ^ this.decryptByte();
+      this.update(p);
+      out[i] = p;
+    }
+    return out;
+  }
+}
+
+interface ZipCentralEntry {
+  name: string; generalFlag: number; method: number; modTime: number;
+  crc32: number; compSize: number; localHeaderOffset: number;
+}
+function readZipEntries(buf: Buffer): ZipCentralEntry[] {
+  let eocdOffset = -1;
+  for (let i = buf.length - 22; i >= 0; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocdOffset = i; break; }
+  }
+  if (eocdOffset === -1) throw new Error('EOCD (End Of Central Directory) tidak ditemukan — bukan berkas zip yang valid, atau sudah terpotong.');
+  const cdOffset = buf.readUInt32LE(eocdOffset + 16);
+  const cdEntries = buf.readUInt16LE(eocdOffset + 10);
+  const entries: ZipCentralEntry[] = [];
+  let p = cdOffset;
+  for (let i = 0; i < cdEntries; i++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error('Central directory zip rusak/tidak konsisten.');
+    const generalFlag = buf.readUInt16LE(p + 8);
+    const method = buf.readUInt16LE(p + 10);
+    const modTime = buf.readUInt16LE(p + 12);
+    const crc32 = buf.readUInt32LE(p + 16);
+    const compSize = buf.readUInt32LE(p + 20);
+    const nameLen = buf.readUInt16LE(p + 28);
+    const extraLen = buf.readUInt16LE(p + 30);
+    const commentLen = buf.readUInt16LE(p + 32);
+    const localHeaderOffset = buf.readUInt32LE(p + 42);
+    const name = buf.slice(p + 46, p + 46 + nameLen).toString('utf8');
+    entries.push({ name, generalFlag, method, modTime, crc32, compSize, localHeaderOffset });
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  return entries;
+}
+function extractZipEntry(buf: Buffer, entry: ZipCentralEntry, password: string): Buffer {
+  const lp = entry.localHeaderOffset;
+  if (buf.readUInt32LE(lp) !== 0x04034b50) throw new Error('Local file header zip rusak.');
+  const nameLen = buf.readUInt16LE(lp + 26);
+  const extraLen = buf.readUInt16LE(lp + 28);
+  const dataStart = lp + 30 + nameLen + extraLen;
+  const isEncrypted = (entry.generalFlag & 0x1) !== 0;
+  let data = buf.slice(dataStart, dataStart + entry.compSize);
+  if (isEncrypted) {
+    // AE-1/AE-2 (WinZip AES) stores method 99 and a 0x9901 extra field — a
+    // different (AES-CTR + HMAC-SHA1) scheme this function does not implement.
+    // Fail loudly instead of silently producing garbage.
+    if (entry.method === 99) {
+      throw new Error(`Entri "${entry.name}" memakai WinZip AES encryption (bukan ZipCrypto klasik) — format ini belum didukung oleh decrypt_file.`);
+    }
+    const keys = new ZipCryptoKeys(password);
+    const header = keys.decrypt(data.slice(0, 12));
+    data = keys.decrypt(data.slice(12));
+    const useDataDescriptor = (entry.generalFlag & 0x8) !== 0;
+    const checkByte = useDataDescriptor ? ((entry.modTime >>> 8) & 0xff) : ((entry.crc32 >>> 24) & 0xff);
+    if (header[11] !== checkByte) {
+      throw new Error(`Passphrase salah untuk entri "${entry.name}" (verifikasi byte header ZipCrypto gagal).`);
+    }
+  }
+  if (entry.method === 0) return data;
+  if (entry.method === 8) return zlib.inflateRawSync(data);
+  throw new Error(`Entri "${entry.name}" memakai metode kompresi zip #${entry.method} yang tidak didukung (hanya stored/deflate).`);
+}
+
+// gpg / openssl: shelled out with a fixed argv (never a shell string) and the
+// passphrase piped over a pipe the child never inherits as an env var or argv
+// token, so it cannot leak into `ps aux` or shell history. Both resolve with
+// {ok:false} rather than rejecting on a wrong passphrase — that is an expected
+// outcome here, not a bug.
+function runWithPipedPassphrase(bin: string, args: string[], passphrase: string, timeoutMs = 30000): Promise<{ code: number; stdout: Buffer; stderr: Buffer }> {
+  return new Promise((resolve, reject) => {
+    let child;
+    try {
+      child = spawn(bin, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch (e: any) {
+      reject(e);
+      return;
+    }
+    const out: Buffer[] = [], err: Buffer[] = [];
+    const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, timeoutMs);
+    child.stdout.on('data', (d: Buffer) => out.push(d));
+    child.stderr.on('data', (d: Buffer) => err.push(d));
+    child.on('error', (e: any) => { clearTimeout(timer); reject(e.code === 'ENOENT' ? new Error(`${bin} tidak ditemukan di PATH.`) : e); });
+    child.on('close', (code: number | null) => {
+      clearTimeout(timer);
+      resolve({ code: code ?? -1, stdout: Buffer.concat(out), stderr: Buffer.concat(err) });
+    });
+    child.stdin.write(passphrase + '\n');
+    child.stdin.end();
+  });
+}
+
+async function decryptGpg(filePath: string, passphrase: string): Promise<DecryptResult> {
+  const r = await runWithPipedPassphrase('gpg', [
+    '--batch', '--yes', '--pinentry-mode', 'loopback', '--passphrase-fd', '0', '-d', filePath,
+  ], passphrase);
+  if (r.code === 0) return { ok: true, plaintext: r.stdout };
+  const stderrText = r.stderr.toString('utf8');
+  const wrongPass = /bad passphrase|bad session key|decryption failed/i.test(stderrText);
+  return { ok: false, message: wrongPass ? 'Passphrase GPG salah, atau berkas rusak.' : (stderrText.split('\n')[0] || `gpg keluar dengan kode ${r.code}`) };
+}
+
+// Tries the combinations an owner is actually likely to have used, in order
+// of how common they are today: modern default (aes-256-cbc + pbkdf2), then
+// aes-128-cbc + pbkdf2, then both ciphers with the legacy (pre-1.1.0) KDF —
+// `openssl enc` gives no header hint about which cipher/KDF was used, unlike
+// gpg or rocvault's own explicit format, so a short deterministic try-list is
+// the honest way to handle it rather than guessing wrong silently.
+async function decryptOpenssl(filePath: string, passphrase: string): Promise<DecryptResult> {
+  const attempts: string[][] = [
+    ['enc', '-d', '-aes-256-cbc', '-pbkdf2', '-salt', '-pass', 'fd:3', '-in', filePath],
+    ['enc', '-d', '-aes-128-cbc', '-pbkdf2', '-salt', '-pass', 'fd:3', '-in', filePath],
+    ['enc', '-d', '-aes-256-cbc', '-salt', '-pass', 'fd:3', '-in', filePath],
+    ['enc', '-d', '-aes-128-cbc', '-salt', '-pass', 'fd:3', '-in', filePath],
+  ];
+  let lastErr = 'Semua kombinasi cipher/KDF openssl yang dicoba gagal.';
+  for (const args of attempts) {
+    const result = await new Promise<{ code: number; stdout: Buffer; stderr: Buffer } | null>((resolve) => {
+      let child;
+      try {
+        child = spawn('openssl', args, { stdio: ['ignore', 'pipe', 'pipe', 'pipe'] });
+      } catch {
+        resolve(null);
+        return;
+      }
+      const out: Buffer[] = [], err: Buffer[] = [];
+      const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 15000);
+      child.stdout.on('data', (d: Buffer) => out.push(d));
+      child.stderr.on('data', (d: Buffer) => err.push(d));
+      child.on('error', () => { clearTimeout(timer); resolve(null); });
+      child.on('close', (code: number | null) => { clearTimeout(timer); resolve({ code: code ?? -1, stdout: Buffer.concat(out), stderr: Buffer.concat(err) }); });
+      // fd 3 is what -pass fd:3 reads from.
+      (child.stdio[3] as any)?.write(passphrase + '\n');
+      (child.stdio[3] as any)?.end();
+    });
+    if (!result) return { ok: false, message: 'openssl tidak ditemukan di PATH.' };
+    if (result.code === 0) return { ok: true, plaintext: result.stdout };
+    lastErr = result.stderr.toString('utf8').split('\n').filter(Boolean).pop() || lastErr;
+  }
+  return { ok: false, message: `Dekripsi openssl gagal untuk semua kombinasi cipher/KDF yang dicoba (AES-256/128-CBC, pbkdf2/legacy). Pesan terakhir: ${lastErr}` };
+}
+
+async function decryptZip(filePath: string, passphrase: string, entryName?: string): Promise<DecryptResult> {
+  const buf = fs.readFileSync(filePath);
+  let entries: ZipCentralEntry[];
+  try {
+    entries = readZipEntries(buf);
+  } catch (e: any) {
+    return { ok: false, message: e.message };
+  }
+  if (!entries.length) return { ok: false, message: 'Arsip zip tidak berisi entri apa pun.' };
+  const target = entryName ? entries.find(e => e.name === entryName) : entries[0];
+  if (!target) return { ok: false, message: `Entri "${entryName}" tidak ditemukan di dalam zip. Entri yang ada: ${entries.map(e => e.name).join(', ')}`, entries: entries.map(e => e.name) };
+  if (entries.length > 1 && !entryName) {
+    return {
+      ok: false,
+      message: `Arsip berisi ${entries.length} entri; sebutkan salah satu lewat parameter entryName. Entri yang ada: ${entries.map(e => e.name).join(', ')}`,
+      entries: entries.map(e => e.name),
+    };
+  }
+  try {
+    const plaintext = extractZipEntry(buf, target, passphrase);
+    return { ok: true, plaintext, entries: entries.map(e => e.name) };
+  } catch (e: any) {
+    return { ok: false, message: e.message, entries: entries.map(e => e.name) };
+  }
+}
+
+function detectEncryptedFormat(buf: Buffer): 'rocvault' | 'gpg' | 'openssl' | 'zip' | 'unknown' {
+  if (buf.length >= 9 && buf.slice(0, 9).toString('utf8') === 'ROCVAULT1') return 'rocvault';
+  if (buf.length >= 8 && buf.slice(0, 8).toString('utf8') === 'Salted__') return 'openssl';
+  if (buf.length >= 4 && buf.readUInt32LE(0) === 0x04034b50) return 'zip';
+  if (buf.length >= 1) {
+    // OpenPGP packet header: bit 7 always set. Symmetrically-encrypted data is
+    // packet tag 9 (old format) or 18 (new format, SEIPD), or a preceding tag 3
+    // (Symmetric-Key Encrypted Session Key) when passphrase-only (`gpg -c`).
+    const first = buf[0];
+    if ((first & 0x80) !== 0) {
+      const oldFormatTag = (first & 0x3c) >> 2;
+      const newFormatTag = first & 0x3f;
+      if (oldFormatTag === 3 || oldFormatTag === 9 || newFormatTag === 3 || newFormatTag === 18) return 'gpg';
+    }
+  }
+  return 'unknown';
+}
 
 export const toolImplementations: Record<string, Function> = {
   list_project_files: async () => {
@@ -1214,6 +1564,138 @@ export const toolImplementations: Record<string, Function> = {
       } finally {
         await client.end().catch(() => {});
       }
+    } catch (err: any) {
+      return { status: "error", message: err?.message || String(err) };
+    }
+  },
+
+  // Decrypt an arbitrary encrypted file. Format is DETECTED from the file's own
+  // magic bytes/header (see detectEncryptedFormat above), not guessed from the
+  // extension — a mislabeled ".txt.enc" is handled correctly either way. See the
+  // long design comment above decryptRocvault/readZipEntries/decryptGpg/
+  // decryptOpenssl for the full rationale of each format's implementation.
+  decrypt_file: async (args: { filename: string; passphrase: string; outputFilename?: string; entryName?: string; format?: string }) => {
+    try {
+      const inputRel = (args.filename || "").trim();
+      if (!inputRel) return { status: "error", message: "filename diperlukan (path berkas terenkripsi, relatif terhadap workspace)." };
+      if (!args.passphrase) {
+        return {
+          status: "error",
+          message: "passphrase diperlukan. JANGAN pernah menebak atau membuat passphrase sendiri — minta pemilik menyebutkannya secara eksplisit di chat, lalu teruskan persis apa adanya.",
+        };
+      }
+
+      const inputPath = path.join(process.cwd(), inputRel);
+      const inputRelCheck = path.relative(process.cwd(), inputPath);
+      if (inputRelCheck.startsWith('..') || path.isAbsolute(inputRelCheck)) {
+        return { status: "error", message: "Invalid filename path: Access denied" };
+      }
+      // Sensitive-path check BEFORE existsSync, deliberately — mirrors the
+      // ordering fix applied to query_neon_db's destructive-statement check.
+      // Checking existence first would leak "does this credential file exist
+      // on this machine" through the choice between a "not found" and a
+      // "blocked" message, and would make the block itself environment-
+      // dependent (present on the owner's device, silently skipped in an
+      // environment where it happens not to exist) instead of an unconditional
+      // rule about which paths this tool will ever touch.
+      if (SENSITIVE_PATH_RE.test(inputRel)) {
+        return { status: "error", message: "Menargetkan berkas kredensial (SSH key, .netrc, cookie store browser, dll) tidak diizinkan lewat tool ini." };
+      }
+      if (!fs.existsSync(inputPath)) {
+        return { status: "error", message: `File not found: ${inputRel}` };
+      }
+
+      // guardShell() is called purely for the shared audit log and the
+      // SHELL_GUARD=off kill switch — actual execution below never runs this
+      // string through a shell (spawn() with a fixed argv, or in-process for
+      // rocvault/zip), so it cannot be used to inject anything.
+      const displayCmd = `decrypt_file ${JSON.stringify(inputRel)}`;
+      const blocked = guardShell('decrypt_file', displayCmd);
+      if (blocked) return blocked;
+
+      const buf = fs.readFileSync(inputPath);
+      const forced = (args.format || "").trim().toLowerCase();
+      const detected = forced && ["rocvault", "gpg", "openssl", "zip"].includes(forced) ? forced : detectEncryptedFormat(buf);
+
+      if (detected === "unknown") {
+        return {
+          status: "error",
+          message: `Tidak bisa mengenali format enkripsi berkas "${inputRel}" dari magic bytes-nya (bukan rocvault/.vault, gpg, openssl enc "Salted__", atau zip). Kalau kamu tahu formatnya, sebutkan lewat parameter format ('rocvault'|'gpg'|'openssl'|'zip').`,
+        };
+      }
+
+      let result: DecryptResult;
+      switch (detected) {
+        case "rocvault":
+          result = decryptRocvault(buf, args.passphrase);
+          break;
+        case "gpg":
+          result = await decryptGpg(inputPath, args.passphrase);
+          break;
+        case "openssl":
+          result = await decryptOpenssl(inputPath, args.passphrase);
+          break;
+        case "zip":
+          result = await decryptZip(inputPath, args.passphrase, args.entryName);
+          break;
+        default:
+          return { status: "error", message: `Format '${detected}' tidak dikenal.` };
+      }
+
+      if (result.ok === false) {
+        return { status: "error", format: detected, message: result.message, ...(result.entries ? { entries: result.entries } : {}) };
+      }
+
+      const plaintext = result.plaintext;
+      const MAX_INLINE = 64 * 1024; // keep tool results small for the model, like read_project_file's MAX_READ
+      const isProbablyText = (() => {
+        // Heuristic: real binary content almost always has a NUL byte early on.
+        const sample = plaintext.subarray(0, Math.min(plaintext.length, 8000));
+        return !sample.includes(0);
+      })();
+
+      let savedTo: string | undefined;
+      if (args.outputFilename) {
+        const outRel = args.outputFilename.trim();
+        const outPath = path.join(process.cwd(), outRel);
+        const outRelCheck = path.relative(process.cwd(), outPath);
+        if (outRelCheck.startsWith('..') || path.isAbsolute(outRelCheck)) {
+          return { status: "error", message: "Invalid outputFilename path: Access denied" };
+        }
+        if (SENSITIVE_PATH_RE.test(outRel)) {
+          return { status: "error", message: "Menulis hasil dekripsi ke atas path kredensial (SSH key, .netrc, dll) tidak diizinkan." };
+        }
+        const parentDir = path.dirname(outPath);
+        if (!fs.existsSync(parentDir)) fs.mkdirSync(parentDir, { recursive: true });
+        fs.writeFileSync(outPath, plaintext);
+        savedTo = outRel;
+      }
+
+      const base: any = {
+        status: "success",
+        format: detected,
+        sourceFile: inputRel,
+        sizeBytes: plaintext.length,
+        ...(result.entries ? { zipEntries: result.entries, extractedEntry: args.entryName || result.entries[0] } : {}),
+      };
+      if (savedTo) {
+        base.savedTo = savedTo;
+        base.message = `Berhasil didekripsi (${detected}) dan disimpan ke ${savedTo} (${plaintext.length} byte).`;
+        if (isProbablyText && plaintext.length <= MAX_INLINE) {
+          base.content = plaintext.toString('utf-8');
+        }
+      } else if (isProbablyText) {
+        if (plaintext.length > MAX_INLINE) {
+          base.content = plaintext.slice(0, MAX_INLINE).toString('utf-8');
+          base.truncated = true;
+          base.note = `Isi ${plaintext.length} byte; dipotong ke ${MAX_INLINE} byte pertama. Berikan outputFilename untuk menyimpan hasil lengkap ke berkas.`;
+        } else {
+          base.content = plaintext.toString('utf-8');
+        }
+      } else {
+        base.message = `Berhasil didekripsi (${detected}, ${plaintext.length} byte) tetapi isinya biner (bukan teks) — sebutkan outputFilename untuk menyimpannya ke berkas alih-alih ditampilkan mentah.`;
+      }
+      return base;
     } catch (err: any) {
       return { status: "error", message: err?.message || String(err) };
     }

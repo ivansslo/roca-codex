@@ -142,7 +142,11 @@ function isCriticalTarget(p: string): boolean {
 //     and on Android app-private storage (/data/data/<package>/app_chrome/...).
 //   - Firefox/Firefox-based profiles (cookies.sqlite, logins.json, key4.db/key3.db).
 //   - macOS Chromium/Firefox profile locations under "Library/Application Support".
-const SENSITIVE_PATH_RE =
+// Exported (in addition to being used internally below) so other choke points that
+// are not shell commands — e.g. decrypt_file's output-path check in tools.ts — can
+// reuse the SAME definition of "credential file" instead of drifting out of sync
+// with a second copy.
+export const SENSITIVE_PATH_RE =
   /(\.ssh\/(id_|identity)|\.oci\/|\.aws\/credentials|\.config\/gh\/|\.netrc|\.git-credentials|\/etc\/shadow|\/etc\/sudoers|\.pem$|_rsa$|_ed25519$|(^|\/)cookies\.sqlite$|(^|\/)(logins\.json|key4\.db|key3\.db)$|(^|\/)(Cookies|Login Data|Web Data)$|com\.(android|google)\.chrome|org\.mozilla\.firefox|com\.brave\.browser|com\.microsoft\.emmx|com\.opera\.browser)/;
 
 /** Commands that read file contents, used to decide if a sensitive path is being exfiltrated. */

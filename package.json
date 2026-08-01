@@ -18,7 +18,7 @@
     "clean": "rm -rf dist server.js",
     "postinstall": "node scripts/postinstall.js",
     "lint": "tsc --noEmit",
-    "test": "tsx server/__tests__/commandGuard.test.ts && tsx server/__tests__/shellGuard.integration.test.ts && tsx server/__tests__/auth.test.ts && tsx server/__tests__/endpoints.integration.test.ts && tsx server/__tests__/ociVmRootdFs.test.ts && tsx server/__tests__/neonDb.test.ts && bash tools/__tests__/rocvault.test.sh",
+    "test": "tsx server/__tests__/commandGuard.test.ts && tsx server/__tests__/shellGuard.integration.test.ts && tsx server/__tests__/auth.test.ts && tsx server/__tests__/endpoints.integration.test.ts && tsx server/__tests__/ociVmRootdFs.test.ts && tsx server/__tests__/neonDb.test.ts && tsx server/__tests__/decryptFile.test.ts && bash tools/__tests__/rocvault.test.sh",
     "test:guard": "tsx server/__tests__/commandGuard.test.ts",
     "test:auth": "tsx server/__tests__/auth.test.ts",
     "test:endpoints": "tsx server/__tests__/endpoints.integration.test.ts",

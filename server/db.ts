@@ -338,8 +338,24 @@ const DEFAULT_SCHEMA: DatabaseSchema = {
         },
         required: ["sql"]
       }
+    },
+    {
+      name: "decrypt_file",
+      description: "Decrypt an encrypted file of ANY common format — the format is auto-detected from the file's actual magic bytes, not its extension. Supports: rocvault (this project's own tools/rocvault .vault files), gpg (OpenPGP symmetric, gpg -c), openssl (openssl enc, tries AES-256/128-CBC with modern pbkdf2 and legacy KDF automatically), and zip (ZipCrypto password-protected archives — WinZip AES zips are detected but not yet supported). NEVER guess or invent a passphrase — ask the owner for it explicitly in chat first, then pass it here exactly as given. Passphrases are used once for this call only, never logged or stored. If the decrypted content is text and small, it is returned inline; otherwise (or if outputFilename is given) it is written to a file in the workspace instead.",
+      parameters: {
+        type: "object",
+        properties: {
+          filename: { type: "string", description: "Path to the encrypted file, relative to the project workspace." },
+          passphrase: { type: "string", description: "The decryption passphrase, exactly as given by the owner. Required — never fabricate this." },
+          outputFilename: { type: "string", description: "Optional path (relative to the workspace) to write the decrypted plaintext to, instead of/in addition to returning it inline." },
+          entryName: { type: "string", description: "For zip archives with more than one entry: which entry's name to extract/decrypt. Omit for single-entry archives." },
+          format: { type: "string", description: "Optional override if auto-detection is wrong or ambiguous: one of 'rocvault', 'gpg', 'openssl', 'zip'." }
+        },
+        required: ["filename", "passphrase"]
+      }
     }
   ],
+
   logs: [],
   chatSessions: [],
   memories: [],
