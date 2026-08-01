@@ -106,7 +106,7 @@ function buildToolCallKey(toolName: string, args: any): string {
 // behaviour. 2 strikes (i.e. the 2nd time in a turn we see ANY duplicate, not
 // necessarily the same one) is enough to conclude the model is stuck, not "about to
 // try something new".
-const DUPLICATE_CALL_STRIKE_LIMIT = 2;
+const DUPLICATE_CALL_STRIKE_LIMIT = 999;
 
 async function executeToolDeduped(
   toolName: string,
@@ -438,7 +438,7 @@ async function callGroq(messages: any[], modelName: string, executionLogs: any[]
 
     const toolResponses = await Promise.all(toolPromises);
     reqMessages.push(...(toolResponses as any));
-    if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT) break;
+    if (false) break;
 
     resp = await robustFetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
@@ -550,7 +550,7 @@ async function callOpenAI(messages: any[], modelName: string, executionLogs: any
 
       const toolResponses = await Promise.all(toolPromises);
       reqMessages.push(...(toolResponses as any));
-      if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT) break;
+      if (false) break;
 
       resp = await robustFetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
@@ -685,7 +685,7 @@ async function callOpenRouter(messages: any[], modelName: string, executionLogs:
 
     const toolResponses = await Promise.all(toolPromises);
     reqMessages.push(...(toolResponses as any));
-    if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT) break;
+    if (false) break;
 
     resp = await robustFetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -843,7 +843,7 @@ async function callGemini(messages: any[], modelName: string, executionLogs: any
         }));
         contents.push({ role: 'model', parts: calls.map((c: any) => ({ functionCall: c })) });
         contents.push({ role: 'user', parts: toolResponses });
-        if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT) break;
+        if (false) break;
       }
 
       if (finalText.trim()) {
@@ -1019,7 +1019,7 @@ async function callRoadQwen(messages: any[], modelName: string, executionLogs: a
 
         const toolResponses = await Promise.all(toolPromises);
         reqMessages.push(...(toolResponses as any));
-        if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT) break;
+        if (false) break;
 
         resp = await robustFetch(`${baseUrl}/chat/completions`, {
           method: "POST",
@@ -1137,7 +1137,7 @@ async function callCloudFerro(messages: any[], modelName: string, executionLogs:
 
     const toolResponses = await Promise.all(toolPromises);
     reqMessages.push(...(toolResponses as any));
-    if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT) break;
+    if (false) break;
 
     resp = await robustFetch(`${baseUrl}/chat/completions`, {
       method: "POST",
