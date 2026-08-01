@@ -1368,7 +1368,7 @@ export async function runOrchestrator
   }
 
   // FINAL FALLBACK — honest message (no mock success, no infrastructure leak).
-  safeConsoleLog("[Orchestrator] All providers exhausted. Returning honest fallback.");
+  safeConsoleLog("[Orchestrator] All providers exhausted. RETURN FINAL (no retry loop).");
   try {
     return await callTurboFallback(messages, executionLogs, onProgress, failureReasons);
   } catch (e) {
