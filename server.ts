@@ -110,14 +110,14 @@ async function startServer() {
     } as Record<string, boolean>;
 
     const catalog = [
-      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Sherlock)", provider: "cfsherlock", icon: "⚡" },
-      { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Sherlock)", provider: "cfsherlock", icon: "🧠" },
-      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash (Sherlock)", provider: "cfsherlock", icon: "⚡" },
-      { id: "openai/gpt-oss-120b", name: "Groq GPT-OSS 120B (Sherlock)", provider: "cfsherlock", icon: "⚡" },
-      { id: "gpt-4o", name: "OpenAI GPT-4o (Sherlock)", provider: "cfsherlock", icon: "🟢" },
-      { id: "gpt-4o-mini", name: "OpenAI GPT-4o mini (Sherlock)", provider: "cfsherlock", icon: "🟢" },
-      { id: "deepseek/deepseek-r1", name: "OpenRouter DeepSeek R1 (Sherlock)", provider: "cfsherlock", icon: "🌐" },
-      { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", name: "Cloudflare Llama 3.3 (Sherlock)", provider: "cfsherlock", icon: "☁️" },
+      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Fast)", provider: "cfsherlock", icon: "⚡" },
+      { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Reasoning)", provider: "cfsherlock", icon: "🧠" },
+      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "cfsherlock", icon: "⚡" },
+      { id: "openai/gpt-oss-120b", name: "Groq GPT-OSS 120B", provider: "cfsherlock", icon: "⚡" },
+      { id: "gpt-4o", name: "OpenAI GPT-4o", provider: "cfsherlock", icon: "🟢" },
+      { id: "gpt-4o-mini", name: "OpenAI GPT-4o mini", provider: "cfsherlock", icon: "🟢" },
+      { id: "deepseek/deepseek-r1", name: "OpenRouter DeepSeek R1", provider: "cfsherlock", icon: "🌐" },
+      { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", name: "Cloudflare Llama 3.3", provider: "cfsherlock", icon: "☁️" },
       { id: "MiniMaxAI/MiniMax-M2.5", name: "CloudFerro Sherlock MiniMax M2.5", provider: "cfsherlock", icon: "🇵🇱" },
       { id: "meta-llama/Llama-3.3-70B-Instruct", name: "CloudFerro Sherlock Llama 3.3 70B", provider: "cfsherlock", icon: "🇵🇱" },
       // Added 2026-08-01: same upstream model id Groq's own catalog entry
