@@ -83,6 +83,6 @@ Termux**-nya sendiri — itu lingkup yang Anda rela tanggung; kunci kerajaan
 - [ ] server berjalan sebagai `rocagent` via systemd (atau proot di Termux)
 - [ ] `app.env` hanya berisi kunci model; kunci cloud di akun lain
 - [ ] `journalctl -u rocagent` memperlihatkan baris `[shell-guard]` saat ada blokir
-- [ ] uji sekali: `run_bash_command` dengan `cat ~/.oci/config` dari chat →
+- [ ] uji sekali: `exec` dengan `cat ~/.oci/config` dari chat →
       harus `Blocked by shell guard [SENSITIVE_PATH]` (dan di user khusus,
       file itu memang tidak ada).

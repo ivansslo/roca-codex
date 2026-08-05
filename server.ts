@@ -113,7 +113,6 @@ async function startServer() {
       { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Fast)", provider: "cfsherlock", icon: "⚡" },
       { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Reasoning)", provider: "cfsherlock", icon: "🧠" },
       { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "cfsherlock", icon: "⚡" },
-      { id: "openai/gpt-oss-120b", name: "Groq GPT-OSS 120B", provider: "cfsherlock", icon: "⚡" },
       { id: "gpt-4o", name: "OpenAI GPT-4o", provider: "cfsherlock", icon: "🟢" },
       { id: "gpt-4o-mini", name: "OpenAI GPT-4o mini", provider: "cfsherlock", icon: "🟢" },
       { id: "deepseek/deepseek-r1", name: "OpenRouter DeepSeek R1", provider: "cfsherlock", icon: "🌐" },

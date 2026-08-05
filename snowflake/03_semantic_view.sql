@@ -8,7 +8,7 @@ CREATE OR REPLACE SEMANTIC VIEW ANALYTICS.ROCAGENT_OPS_SEMANTIC_VIEW
   TABLES (
     EXEC AS FACT_TOOL_EXECUTION PRIMARY KEY (EXECUTION_ID)
       WITH SYNONYMS ('tool executions', 'agent runs', 'execution log')
-      COMMENT = 'Setiap kali RocAgent menjalankan satu tool (run_bash_command, write_project_file, dll)',
+      COMMENT = 'Setiap kali RocAgent menjalankan satu tool (exec, write_project_file, dll)',
     TOOL AS DIM_TOOL PRIMARY KEY (TOOL_NAME)
       WITH SYNONYMS ('tools', 'agent tools', 'capabilities')
       COMMENT = 'Katalog tool yang tersedia bagi RocAgent',

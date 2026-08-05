@@ -53,7 +53,7 @@ setting `HOST` deliberately, and a warning is printed when you do. Never expose
 it on a network you do not control — put Tailscale or a VPN in front instead.
 
 **3. Shell command guard.**
-Every command from `run_bash_command`, `terminal_manager` and `ssh_run` passes
+Every command from `exec` and `terminal_manager` passes
 through [`server/commandGuard.ts`](server/commandGuard.ts). It parses the
 command into the programs it would actually run — following pipes, `;`, `&&`,
 command substitution and backticks, and recursing into `sh -c` payloads — then
@@ -318,13 +318,13 @@ inspected or tests they actually ran.
 | Pipeline | Role | Job | Typical tools |
 |---|---|---|---|
 | fast | **Scout** | Fast, read-only recon — catches project/file context before anything is built. | `list_project_files`, `read_project_file`, `search_codebase`, read-only shell |
-| fast | **Builder/Modder** | Real implementation. Takes initiative and executes immediately — no clarifying questions. | `write_project_file`, `edit_project_file`, `run_bash_command`, `terminal_manager` |
-| fast | **Breaker** | Tries to break what Builder just produced — injection, auth bypass, secret exposure, SSRF, path traversal — validated with real tool checks. | `search_codebase`, `run_bash_command`, `read_project_file` |
+| fast | **Builder/Modder** | Real implementation. Takes initiative and executes immediately — no clarifying questions. | `write_project_file`, `edit_project_file`, `exec`, `terminal_manager` |
+| fast | **Breaker** | Tries to break what Builder just produced — injection, auth bypass, secret exposure, SSRF, path traversal — validated with real tool checks. | `search_codebase`, `exec`, `read_project_file` |
 | fast | **Closer** | Reads the prior reports and makes the fast final call. | Spot-check tool calls only when a claim looks unverified |
 | engineering | **Chief Architect** | Designs the system blueprint — file layout, tech stack, security posture, data schema. | `list_project_files`, `read_project_file`, `search_codebase`, `git log/diff` |
-| engineering | **Lead Developer** | Implements the blueprint for real. | `write_project_file`, `edit_project_file`, `run_bash_command`, `terminal_manager` |
-| engineering | **Security Pentester** | OWASP Top 10 audit of what Developer produced, with an explicit score. | `read_project_file`, `search_codebase`, `run_bash_command`, `[ SCORE ]` |
-| engineering | **QA Supervisor** | Regression test spec/execution, coverage, release sign-off. | `write_project_file`, `run_bash_command`, `[ COVERAGE ]`, `[ RELEASE ]` |
+| engineering | **Lead Developer** | Implements the blueprint for real. | `write_project_file`, `edit_project_file`, `exec`, `terminal_manager` |
+| engineering | **Security Pentester** | OWASP Top 10 audit of what Developer produced, with an explicit score. | `read_project_file`, `search_codebase`, `exec`, `[ SCORE ]` |
+| engineering | **QA Supervisor** | Regression test spec/execution, coverage, release sign-off. | `write_project_file`, `exec`, `[ COVERAGE ]`, `[ RELEASE ]` |
 
 Each role hands its report to every later role in its pipeline via the same
 `## Current Context` mechanism `buildSystemPrompt` already uses for chat —

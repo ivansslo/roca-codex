@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS ANALYTICS.DIM_TOOL (
   IS_MUTATING       BOOLEAN COMMENT 'TRUE bila tool ini menulis/mengubah state (write/edit/delete/run_bash)',
   PRIMARY KEY (TOOL_NAME)
 )
-COMMENT = 'Dimensi: katalog tool RocAgent (list_project_files, run_bash_command, dst)';
+COMMENT = 'Dimensi: katalog tool RocAgent (list_project_files, exec, dst)';
 
 CREATE TABLE IF NOT EXISTS ANALYTICS.DIM_DATE (
   DATE_KEY          DATE NOT NULL,
@@ -89,7 +89,7 @@ USING (
     ('edit_file', 'file', TRUE),
     ('edit_project_file', 'file', TRUE),
     ('delete_project_file', 'file', TRUE),
-    ('run_bash_command', 'shell', TRUE),
+    ('exec', 'shell', TRUE),
     ('terminal_manager', 'shell', TRUE),
     ('search_codebase', 'file', FALSE),
     ('web_searching_module', 'network', FALSE),

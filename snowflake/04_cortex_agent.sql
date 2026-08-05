@@ -24,7 +24,7 @@ $$
     "sample_questions": [
       {"question": "Berapa total eksekusi tool minggu ini?"},
       {"question": "Tool apa yang paling sering diblokir oleh shell guard?"},
-      {"question": "Berapa tingkat keberhasilan (success rate) run_bash_command?"},
+      {"question": "Berapa tingkat keberhasilan (success rate) exec?"},
       {"question": "Tampilkan tren jumlah eksekusi per hari dalam 30 hari terakhir."}
     ]
   },

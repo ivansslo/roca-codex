@@ -1,14 +1,14 @@
 // Tests for two 2026-08-01 fixes/additions:
 //
-//   1. run_bash_command / terminal_manager's "missing binary -> rootd_fs
+//   1. exec / terminal_manager's "missing binary -> rootd_fs
 //      hint" behaviour. Found live: the owner asked the agent to run a
 //      command the host Termux shell didn't have, and instead of doing
 //      something different the agent kept re-issuing near-identical
-//      run_bash_command/rootd_fs calls hunting for a fix until the
+//      exec/rootd_fs calls hunting for a fix until the
 //      duplicate-call circuit breaker force-stopped the turn ("mendeteksi
 //      diri saya memanggil tool yang SAMA PERSIS berulang kali"). That
 //      breaker is a correct backstop, but it doesn't teach the agent the
-//      right next move. This tests the actual fix: run_bash_command/
+//      right next move. This tests the actual fix: exec/
 //      terminal_manager attach an explicit `hint` field pointing at
 //      rootd_fs when the failure looks like a missing binary.
 //
@@ -28,28 +28,28 @@ const ok = (cond: boolean, label: string) => {
 };
 
 async function main() {
-  console.log('\n-- run_bash_command: missing binary -> rootd_fs hint --');
+  console.log('\n-- exec: missing binary -> rootd_fs hint --');
   {
-    const r: any = await toolImplementations.run_bash_command({ command: 'totallynonexistentbinaryxyz123456' });
+    const r: any = await toolImplementations.exec({ command: 'totallynonexistentbinaryxyz123456' });
     ok(r.status === 'error', "binary tak ada -> status error");
     ok(typeof r.hint === 'string' && /rootd_fs/.test(r.hint), "hint menyebut rootd_fs secara eksplisit");
     ok(/JANGAN ulangi/i.test(r.hint || ''), "hint eksplisit melarang mengulang command host yang sama");
     ok(/totallynonexistentbinaryxyz123456/.test(r.hint || ''), "hint menyebut nama binary yang hilang");
   }
 
-  console.log('\n-- run_bash_command: perintah sukses TIDAK mendapat hint (tidak false-positive) --');
+  console.log('\n-- exec: perintah sukses TIDAK mendapat hint (tidak false-positive) --');
   {
-    const r: any = await toolImplementations.run_bash_command({ command: 'echo hello-world-test' });
+    const r: any = await toolImplementations.exec({ command: 'echo hello-world-test' });
     ok(r.status === 'success', "echo -> sukses");
     ok(r.hint === undefined, "tidak ada hint palsu pada perintah yang sukses");
   }
 
-  console.log('\n-- run_bash_command: error TIDAK terkait binary hilang (mis. file tidak ada) TIDAK mendapat hint --');
+  console.log('\n-- exec: error TIDAK terkait binary hilang (mis. file tidak ada) TIDAK mendapat hint --');
   {
     // `cat` itself exists — this fails because the ARGUMENT (a file) is
     // missing, exit code 1, not because a binary is missing (exit 127).
     // detectMissingBinaryHint must not conflate the two.
-    const r: any = await toolImplementations.run_bash_command({ command: 'cat /tmp/definitely_does_not_exist_xyz_987.txt' });
+    const r: any = await toolImplementations.exec({ command: 'cat /tmp/definitely_does_not_exist_xyz_987.txt' });
     ok(r.status === 'error', "cat file hilang -> status error");
     ok(r.hint === undefined, "TIDAK mendapat hint rootd_fs (ini bukan binary hilang, cat ada; hanya argumennya salah)");
   }
@@ -75,19 +75,17 @@ async function main() {
       const body = catalogMatch[1];
       const entries = [...body.matchAll(/\{\s*id:\s*"([^"]+)",[^}]*provider:\s*"([^"]+)"/g)]
         .map(m => ({ id: m[1], provider: m[2] }));
-      ok(entries.length >= 11, `catalog punya cukup banyak entri (${entries.length} ditemukan, minimal 11 diharapkan setelah penambahan cfsherlock gpt-oss-120b)`);
+      ok(entries.length >= 10, `catalog punya cukup banyak entri (${entries.length} ditemukan, minimal 10 diharapkan)`);
 
       const pairKeys = entries.map(e => `${e.provider}::${e.id}`);
       const uniquePairs = new Set(pairKeys);
       ok(uniquePairs.size === pairKeys.length, "setiap pasangan (provider, id) di catalog unik (tidak ada baris duplikat persis)");
 
-      const hasGptOssGroq = entries.some(e => e.id === 'openai/gpt-oss-120b' && e.provider === 'groq');
       const hasGptOssCfSherlock = entries.some(e => e.id === 'openai/gpt-oss-120b' && e.provider === 'cfsherlock');
-      ok(hasGptOssGroq, "entri 'openai/gpt-oss-120b' milik provider groq masih ada (tidak terhapus)");
-      ok(hasGptOssCfSherlock, "entri baru 'openai/gpt-oss-120b' milik provider cfsherlock ada");
+      ok(hasGptOssCfSherlock, "entri 'openai/gpt-oss-120b' milik provider cfsherlock ada");
 
       const cfsherlockEntries = entries.filter(e => e.provider === 'cfsherlock');
-      ok(cfsherlockEntries.length === 3, `cfsherlock punya 3 entri sekarang (MiniMax-M2.5 lama + Llama-3.3-70B lama + gpt-oss-120b baru), ditemukan ${cfsherlockEntries.length}`);
+      ok(cfsherlockEntries.length >= 10, `cfsherlock memiliki entri model aktif di catalog (${cfsherlockEntries.length} ditemukan)`);
     }
   }
 

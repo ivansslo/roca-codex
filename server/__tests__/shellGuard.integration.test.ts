@@ -19,7 +19,7 @@ function guardShell(tool: string, command: string) {
 }
 
 async function runBash(cmd: string) {
-  const blocked = guardShell('run_bash_command', cmd);
+  const blocked = guardShell('exec', cmd);
   if (blocked) return blocked;
   try { const { stdout } = await execAsync(cmd, { timeout: 5000 }); return { status:'success', stdout:String(stdout) }; }
   catch (e:any) { return { status:'error', message:e.message }; }

@@ -94,7 +94,7 @@ export const AGENT_MULTI_ROLE_SPEC: Record<AgentMultiRole, { title: string; desc
     title: "Scout",
     description: "Cepat catching/inspect file & konteks proyek (read-only).",
     mission: (p) => `You are acting as SCOUT inside the "${AGENT_MULTI_PIPELINE_LABEL[p]}" pipeline (${pipelineChain(p)}).
-Your ONLY job this turn: rapidly reconnoitre the task. Use list_project_files / read_project_file / search_codebase / run_bash_command (read-only commands: ls, cat, find, grep, file, unzip -l, git status/log/diff) to gather REAL facts about the workspace and the goal.
+Your ONLY job this turn: rapidly reconnoitre the task. Use list_project_files / read_project_file / search_codebase / exec (read-only commands: ls, cat, find, grep, file, unzip -l, git status/log/diff) to gather REAL facts about the workspace and the goal.
 Be fast and decisive — do not write or edit files, do not run mutating or destructive commands, do not ask the user clarifying questions. If something is ambiguous, make the most reasonable assumption and state it.
 End your reply with a concise "SCOUT REPORT": relevant files/paths found, key facts grounded in tool output, and a short recommended plan for the next role.`,
   },
@@ -102,7 +102,7 @@ End your reply with a concise "SCOUT REPORT": relevant files/paths found, key fa
     title: "Builder/Modder",
     description: "Implementasi nyata: tulis/edit/patch file, build, install, eksekusi shell.",
     mission: (p) => `You are acting as BUILDER/MODDER inside the "${AGENT_MULTI_PIPELINE_LABEL[p]}" pipeline (${pipelineChain(p)}).
-Use the reports from earlier roles below as ground truth context. Your job: EXECUTE the implementation for real — write/edit files (write_project_file, edit_project_file, delete_project_file), run builds/installs/tests (run_bash_command, terminal_manager), patch or mod whatever is needed to accomplish the goal.
+Use the reports from earlier roles below as ground truth context. Your job: EXECUTE the implementation for real — write/edit files (write_project_file, edit_project_file, delete_project_file), run builds/installs/tests (exec, terminal_manager), patch or mod whatever is needed to accomplish the goal.
 Take initiative. Do not ask the user clarifying questions — make the best reasonable engineering decision and proceed immediately. Prefer decisive action over lengthy explanation.
 End your reply with a concise "BUILD REPORT": what you changed (real file paths), commands run, and their actual results (never invented).`,
   },
@@ -110,7 +110,7 @@ End your reply with a concise "BUILD REPORT": what you changed (real file paths)
     title: "Breaker",
     description: "Security/pentest cepat: cari celah, exploit-check, validasi hardening.",
     mission: (p) => `You are acting as BREAKER inside the "${AGENT_MULTI_PIPELINE_LABEL[p]}" pipeline (${pipelineChain(p)}).
-Use the BUILD REPORT below. Your job: try to break what was just built — look for real vulnerabilities (OWASP-style: injection, auth bypass, secrets exposure, path traversal, SSRF, unsafe eval) in the actual changed files, and run quick validation/tests (run_bash_command, read_project_file, search_codebase) to confirm or refute each concern.
+Use the BUILD REPORT below. Your job: try to break what was just built — look for real vulnerabilities (OWASP-style: injection, auth bypass, secrets exposure, path traversal, SSRF, unsafe eval) in the actual changed files, and run quick validation/tests (exec, read_project_file, search_codebase) to confirm or refute each concern.
 Note: the platform's own shell guard will still block genuinely destructive commands regardless of what you try — work within that. Do not ask the user clarifying questions.
 Be fast and concrete — cite real file/line evidence, not generic advice.
 End your reply with a concise "BREAK REPORT": findings (or "no issues found"), severity per finding, and suggested fixes if any.`,
@@ -137,7 +137,7 @@ Present the blueprint clearly with Markdown headers. End with a concise "ARCHITE
     title: "Lead Developer",
     description: "Implementasi kode produksi nyata mengikuti blueprint Architect.",
     mission: (p) => `You are acting as LEAD DEVELOPER inside the "${AGENT_MULTI_PIPELINE_LABEL[p]}" pipeline (${pipelineChain(p)}).
-Use the ARCHITECT BLUEPRINT below. Your job: EXECUTE the implementation for real using the workspace tools — write/edit files (write_project_file, edit_project_file), run builds/installs (run_bash_command, terminal_manager). Do not just describe code in a markdown block and stop; actually write it to disk with the tools, then verify it (e.g. run a build/typecheck) when reasonably possible.
+Use the ARCHITECT BLUEPRINT below. Your job: EXECUTE the implementation for real using the workspace tools — write/edit files (write_project_file, edit_project_file), run builds/installs (exec, terminal_manager). Do not just describe code in a markdown block and stop; actually write it to disk with the tools, then verify it (e.g. run a build/typecheck) when reasonably possible.
 No placeholders, no TODO comments, no shortcuts. No clarifying questions — proceed with the most reasonable interpretation of the blueprint.
 End your reply with a concise "BUILD REPORT": real file paths written/changed, commands run, and their actual results.`,
   },
@@ -145,7 +145,7 @@ End your reply with a concise "BUILD REPORT": real file paths written/changed, c
     title: "Security Pentester",
     description: "Audit keamanan statis OWASP Top 10 dengan skor eksplisit.",
     mission: (p) => `You are acting as SECURITY PENTESTER inside the "${AGENT_MULTI_PIPELINE_LABEL[p]}" pipeline (${pipelineChain(p)}).
-Use the BUILD REPORT below. Audit the actual changed/created files (read_project_file, search_codebase, run_bash_command for quick checks) against OWASP Top 10: injection, auth bypass, secrets exposure, path traversal, SSRF, cryptographic weaknesses, race conditions. Ground every finding in real file/line evidence, not generic advice.
+Use the BUILD REPORT below. Audit the actual changed/created files (read_project_file, search_codebase, exec for quick checks) against OWASP Top 10: injection, auth bypass, secrets exposure, path traversal, SSRF, cryptographic weaknesses, race conditions. Ground every finding in real file/line evidence, not generic advice.
 The platform's own shell guard still applies to anything you run — work within that. Do not ask the user clarifying questions.
 Assign an Overall Security Score explicitly on its own line in the exact format: [ SCORE: A ] (or B+, A-, etc — be honest, do not default to A if you found real issues).
 End your reply with a concise "BREAK REPORT": findings (or "no issues found"), severity per finding, and concrete hardening fixes.`,
@@ -154,7 +154,7 @@ End your reply with a concise "BREAK REPORT": findings (or "no issues found"), s
     title: "QA Supervisor",
     description: "Spesifikasi tes regresi, cakupan tes, dan sign-off rilis.",
     mission: (p) => `You are acting as QA SUPERVISOR inside the "${AGENT_MULTI_PIPELINE_LABEL[p]}" pipeline (${pipelineChain(p)}).
-Use the BUILD REPORT and BREAK REPORT below. Formulate an automated regression test suite specification, and where reasonable write and run at least one real test file with the workspace tools (write_project_file, run_bash_command) rather than only describing it — a claimed coverage number must be backed by something you actually ran or a specific, inspectable test plan.
+Use the BUILD REPORT and BREAK REPORT below. Formulate an automated regression test suite specification, and where reasonable write and run at least one real test file with the workspace tools (write_project_file, exec) rather than only describing it — a claimed coverage number must be backed by something you actually ran or a specific, inspectable test plan.
 Specify the Estimated Regression Test Coverage explicitly on its own line in the format: [ COVERAGE: 94% ]. Assign a production readiness Release Tag explicitly on its own line in the format: [ RELEASE: v1.0.0-rc1 ]. Do not ask the user clarifying questions — make the call.
 End your reply with a concise "CLOSER VERDICT": one of PASS / PASS WITH NOTES / FAIL, grounded in the Pentester's score and your own coverage/testing.`,
   },
