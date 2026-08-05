@@ -9,7 +9,7 @@ import { FileArchive } from './components/FileArchive';
 import { AiProviderValidator } from './components/AiProviderValidator';
 import { EnvConfigModal } from './components/EnvConfigModal';
 import { EnvEditor } from './components/EnvEditor';
-import { SshSettings } from './components/SshSettings';
+import { DatabaseSettings } from './components/DatabaseSettings';
 import { GitCredentials } from './components/GitCredentials';
 import { LoginGate } from './components/LoginGate';
 import { Toaster, toast } from './components/Toast';
@@ -394,7 +394,7 @@ export default function App() {
               <div className="space-y-8">
                 <AiProviderValidator onStatusUpdated={setAiProviderHasError} onOpenEnvModal={() => setEnvModalOpen(true)} onOpenEnvEditor={() => setSettingsSection('general')} />
                 <EnvEditor isPro={isPro} userEmail={userEmail} onSaved={() => {}} />
-                <SshSettings />
+                <DatabaseSettings />
                 <GitCredentials />
 
                 <div>

@@ -727,6 +727,108 @@ async function startServer() {
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
+  // ---- Database & Analytics (Snowflake & Neon DB) config + status ----
+  app.get("/api/db/config", (req, res) => {
+    const snowflakeAccount = process.env.SNOWFLAKE_ACCOUNT || "";
+    const snowflakeUser = process.env.SNOWFLAKE_USER || "";
+    const snowflakePat = process.env.SNOWFLAKE_PAT || process.env.SNOWFLAKE_KEY || "";
+    const snowflakeDb = process.env.SNOWFLAKE_INSIGHT_DB || "ROCAGENTINSIGHT_DB";
+    const snowflakeSchema = process.env.SNOWFLAKE_INSIGHT_SCHEMA || "GOVERNANCE";
+    const snowflakeAgent = process.env.SNOWFLAKE_INSIGHT_AGENT || "ROCAGENTINSIGHT";
+    const neonUri = process.env.NEON_URI || process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || "";
+
+    const snowflakeActive = Boolean(snowflakeAccount.trim() && snowflakeUser.trim() && snowflakePat.trim());
+    const neonActive = Boolean(neonUri.trim());
+
+    res.json({
+      snowflake: {
+        active: snowflakeActive,
+        account: snowflakeAccount,
+        user: snowflakeUser,
+        pat: snowflakePat ? "***" : "",
+        database: snowflakeDb,
+        schema: snowflakeSchema,
+        agent: snowflakeAgent
+      },
+      neon: {
+        active: neonActive,
+        uri: neonUri ? (neonUri.startsWith("postgres") ? `${neonUri.slice(0, 15)}...***` : "***") : ""
+      }
+    });
+  });
+
+  app.post("/api/db/config", async (req, res) => {
+    try {
+      const { snowflakeAccount, snowflakeUser, snowflakePat, snowflakeDb, snowflakeSchema, snowflakeAgent, neonUri } = req.body || {};
+      const envPath = path.join(process.cwd(), ".env");
+      let lines = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf-8").split("\n") : [];
+      const setEnv = (key: string, value: string | undefined) => {
+        if (value === undefined || value === "***" || (typeof value === "string" && value.endsWith("***"))) return;
+        const valStr = String(value);
+        process.env[key] = valStr;
+        const idx = lines.findIndex(l => new RegExp(`^\\s*${key}\\s*=`).test(l));
+        if (idx >= 0) lines[idx] = `${key}=${valStr}`;
+        else lines.push(`${key}=${valStr}`);
+      };
+
+      setEnv("SNOWFLAKE_ACCOUNT", snowflakeAccount);
+      setEnv("SNOWFLAKE_USER", snowflakeUser);
+      setEnv("SNOWFLAKE_PAT", snowflakePat);
+      setEnv("SNOWFLAKE_INSIGHT_DB", snowflakeDb);
+      setEnv("SNOWFLAKE_INSIGHT_SCHEMA", snowflakeSchema);
+      setEnv("SNOWFLAKE_INSIGHT_AGENT", snowflakeAgent);
+      setEnv("NEON_URI", neonUri);
+
+      fs.writeFileSync(envPath, lines.join("\n").replace(/\n{3,}/g, "\n\n") + "\n", "utf-8");
+      try { dotenv.config({ override: true }); } catch {}
+
+      const sfActive = Boolean((process.env.SNOWFLAKE_ACCOUNT || "").trim() && (process.env.SNOWFLAKE_USER || "").trim() && (process.env.SNOWFLAKE_PAT || process.env.SNOWFLAKE_KEY || "").trim());
+      const nActive = Boolean((process.env.NEON_URI || process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || "").trim());
+
+      res.json({
+        success: true,
+        message: `Konfigurasi database tersimpan. Snowflake: ${sfActive ? "AKTIF ✅" : "TIDAK AKTIF ⚪"}, Neon DB: ${nActive ? "AKTIF ✅" : "TIDAK AKTIF ⚪"}`
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/db/test", async (req, res) => {
+    try {
+      const sfAccount = (process.env.SNOWFLAKE_ACCOUNT || "").trim();
+      const sfUser = (process.env.SNOWFLAKE_USER || "").trim();
+      const sfPat = (process.env.SNOWFLAKE_PAT || process.env.SNOWFLAKE_KEY || "").trim();
+      const sfActive = Boolean(sfAccount && sfUser && sfPat);
+
+      const neonUri = (process.env.NEON_URI || process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || "").trim();
+      const neonActive = Boolean(neonUri);
+
+      const messages: string[] = [];
+      if (sfActive) {
+        messages.push(`[Snowflake Cortex] ✅ AKTIF — Akun: ${sfAccount}, User: ${sfUser}, Agent: ${process.env.SNOWFLAKE_INSIGHT_AGENT || "ROCAGENTINSIGHT"}`);
+      } else {
+        messages.push(`[Snowflake Cortex] ⚪ TIDAK AKTIF — Lengkapi SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, dan SNOWFLAKE_PAT.`);
+      }
+
+      if (neonActive) {
+        const isSsl = neonUri.includes("sslmode=require");
+        messages.push(`[Neon Postgres DB] ✅ AKTIF — URI terkonfigurasi (${isSsl ? "SSL diaktifkan" : "Tanpa sslmode=require"})`);
+      } else {
+        messages.push(`[Neon Postgres DB] ⚪ TIDAK AKTIF — Lengkapi NEON_URI.`);
+      }
+
+      res.json({
+        success: true,
+        snowflakeActive: sfActive,
+        neonActive: neonActive,
+        report: messages.join("\n")
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/ssh/exec", async (req, res) => {
     try {
       const command = String(req.body?.command || "");
