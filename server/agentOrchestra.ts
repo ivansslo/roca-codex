@@ -34,7 +34,7 @@
  * If a role's underlying provider call fails, the pipeline stops with an
  * honest failure instead of letting later roles verdict on missing data.
  */
-import { runOrchestrator, OrchestratorProgressEvent } from "./orchestrator";
+import { runOrchestrator, OrchestratorProgressEvent } from "./orchestrator.js";
 
 export type AgentMultiRole =
   | "scout" | "builder" | "breaker" | "closer"

@@ -1,6 +1,6 @@
 import cron from 'node-cron';
-import { db } from './db';
-import { toolImplementations } from './tools';
+import { db } from './db.js';
+import { toolImplementations } from './tools.js';
 
 export function initScheduler() {
   console.log("Initializing scheduler...");

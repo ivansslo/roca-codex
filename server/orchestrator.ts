@@ -11,8 +11,8 @@ import util from "util";
 import fs from "fs";
 import path from "path";
 import { GoogleGenAI, FunctionDeclaration } from "@google/genai";
-import { db } from "./db";
-import { executeTool } from "./tools";
+import { db } from "./db.js";
+import { executeTool } from "./tools.js";
 
 if (dns && dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder('ipv4first');

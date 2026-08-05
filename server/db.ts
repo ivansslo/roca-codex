@@ -1,7 +1,10 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
-const DB_FILE = path.join(process.cwd(), 'db.json');
+const DB_FILE = process.env.VERCEL
+  ? path.join(os.tmpdir(), 'rocagent-db.json')
+  : path.join(process.cwd(), 'db.json');
 
 export interface ToolDefinition {
   name: string;

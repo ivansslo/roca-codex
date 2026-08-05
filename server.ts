@@ -8,14 +8,13 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import dns from "dns";
-import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
-import { runOrchestrator } from "./server/orchestrator";
-import { runAgentOrchestra } from "./server/agentOrchestra";
-import { db } from "./server/db";
-import { initScheduler } from "./server/scheduler";
-import { createAuthMiddleware } from "./server/authMiddleware";
-import { toolImplementations, sshExec, guardShell } from "./server/tools";
+import { runOrchestrator } from "./server/orchestrator.js";
+import { runAgentOrchestra } from "./server/agentOrchestra.js";
+import { db } from "./server/db.js";
+import { initScheduler } from "./server/scheduler.js";
+import { createAuthMiddleware } from "./server/authMiddleware.js";
+import { toolImplementations, sshExec, guardShell } from "./server/tools.js";
 
 if (dns && dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder('ipv4first');
@@ -72,16 +71,15 @@ function maskEnvValue(key: string, value: string): string {
   return value.length <= 4 ? ENV_MASK_PREFIX : ENV_MASK_PREFIX + value.slice(-4);
 }
 
-async function startServer() {
-  const app = express();
-  const PORT = parseInt(process.env.PORT || "3000", 10);
+export const app = express();
+const PORT = parseInt(process.env.PORT || "3000", 10);
 
-  if (HOST !== "127.0.0.1" && HOST !== "localhost" && HOST !== "::1") {
-    console.warn(
-      `\n⚠️  HOST=${HOST} — server is reachable beyond this device. ` +
-      "Make sure the network is trusted (Tailscale/VPN), not open Wi-Fi.\n"
-    );
-  }
+if (HOST !== "127.0.0.1" && HOST !== "localhost" && HOST !== "::1") {
+  console.warn(
+    `\n⚠️  HOST=${HOST} — server is reachable beyond this device. ` +
+    "Make sure the network is trusted (Tailscale/VPN), not open Wi-Fi.\n"
+  );
+}
 
   initScheduler();
 
@@ -976,15 +974,25 @@ async function startServer() {
       if (req.path.startsWith('/api/')) return next();
       res.sendFile(path.join(distPath, 'index.html'));
     });
-  } else {
-    console.log("⚡ Serving live Vite development middleware...");
-    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
-    app.use(vite.middlewares);
   }
 
-  app.listen(PORT, HOST, () => {
-    console.log(`🚀 RocAgent Server running on http://${HOST}:${PORT} (auth: required)`);
-  });
-}
+  // In Vercel serverless environment, DO NOT call app.listen() or Vite dev middleware
+  if (!process.env.VERCEL) {
+    if (!fs.existsSync(path.join(distPath, 'index.html')) || process.env.FORCE_DEV_VITE === 'true') {
+      import("vite").then(({ createServer: createViteServer }) => {
+        createViteServer({ server: { middlewareMode: true }, appType: "spa" }).then((vite) => {
+          console.log("⚡ Serving live Vite development middleware...");
+          app.use(vite.middlewares);
+          app.listen(PORT, HOST, () => {
+            console.log(`🚀 RocAgent Server running on http://${HOST}:${PORT} (auth: required)`);
+          });
+        });
+      });
+    } else {
+      app.listen(PORT, HOST, () => {
+        console.log(`🚀 RocAgent Server running on http://${HOST}:${PORT} (auth: required)`);
+      });
+    }
+  }
 
-startServer();
+export default app;

@@ -9,12 +9,12 @@ import path from 'path';
 import crypto from 'crypto';
 import zlib from 'zlib';
 import { spawn } from 'child_process';
-import { db } from './db';
+import { db } from './db.js';
 import { exec, execFile } from 'child_process';
 import util from 'util';
 import net from 'net';
 import dns from 'dns';
-import { checkCommand, auditLine, resolveMode, SENSITIVE_PATH_RE } from './commandGuard';
+import { checkCommand, auditLine, resolveMode, SENSITIVE_PATH_RE } from './commandGuard.js';
 import { Client as PgClient } from 'pg';
 
 const execAsync = util.promisify(exec);
