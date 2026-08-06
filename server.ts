@@ -106,9 +106,11 @@ if (HOST !== "127.0.0.1" && HOST !== "localhost" && HOST !== "::1") {
     const have = {
       cfsherlock: !!(process.env.CF_SHERLOCK_KEY || process.env.CLOUDFERRO_SHERLOCK_API_KEY || process.env.CLOUDFERRO_KEY),
       gitlabduo: !!(process.env.GITLAB_DUO_KEY || process.env.GITLAB_TOKEN || process.env.GITLAB_PAT),
+      requesty: !!(process.env.REQUESTY_API_KEY || process.env.REQUESTY_KEY),
     } as Record<string, boolean>;
 
     const catalog = [
+      { id: "azure/gpt-5.4-mini@eastus2", name: "Azure GPT-5.4 Mini (Requesty)", provider: "requesty", icon: "🌐" },
       { id: "gitlab-duo-chat", name: "GitLab Duo (Claude 3.5 Sonnet)", provider: "gitlabduo", icon: "🦊" },
       { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Fast)", provider: "cfsherlock", icon: "⚡" },
       { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Reasoning)", provider: "cfsherlock", icon: "🧠" },

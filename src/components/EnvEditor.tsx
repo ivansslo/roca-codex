@@ -17,6 +17,7 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
   // Key-value form state (AI Provider Keys Only)
   const [cfSherlockKey, setCfSherlockKey] = useState('');
   const [gitlabDuoKey, setGitlabDuoKey] = useState('');
+  const [requestyKey, setRequestyKey] = useState('');
   const [geminiKey, setGeminiKey] = useState('');
   const [groqKey, setGroqKey] = useState('');
   const [openAiKey, setOpenAiKey] = useState('');
@@ -47,6 +48,7 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
 
         setCfSherlockKey(varsMap['CF_SHERLOCK_KEY'] || varsMap['CLOUDFERRO_SHERLOCK_API_KEY'] || '');
         setGitlabDuoKey(varsMap['GITLAB_DUO_KEY'] || varsMap['GITLAB_TOKEN'] || '');
+        setRequestyKey(varsMap['REQUESTY_API_KEY'] || varsMap['REQUESTY_KEY'] || '');
         setGeminiKey(varsMap['GEMINI_API_KEY'] || varsMap['GOOGLE_API_KEY'] || '');
         setGroqKey(varsMap['GROQ_KEY'] || varsMap['GROQ_API_KEY'] || '');
         setOpenAiKey(varsMap['OPENAI_API_KEY'] || varsMap['OPENAI_KEY'] || '');
@@ -83,6 +85,7 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
       const envs = Object.entries({
         CF_SHERLOCK_KEY: cfSherlockKey,
         GITLAB_DUO_KEY: gitlabDuoKey,
+        REQUESTY_API_KEY: requestyKey,
         GEMINI_API_KEY: geminiKey,
         GROQ_KEY: groqKey,
         OPENAI_API_KEY: openAiKey,
@@ -265,6 +268,14 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
               value={gitlabDuoKey}
               setValue={setGitlabDuoKey}
               placeholder="glpat-..."
+            />
+            <KeyCard
+              label="REQUESTY_API_KEY"
+              desc="Requesty.ai — Azure GPT-5.4 Mini"
+              stateKey="requesty"
+              value={requestyKey}
+              setValue={setRequestyKey}
+              placeholder="rqsty-sk-..."
             />
             <KeyCard
               label="GEMINI_API_KEY"

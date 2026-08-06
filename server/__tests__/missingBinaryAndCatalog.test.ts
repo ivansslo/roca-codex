@@ -87,6 +87,9 @@ async function main() {
       const hasGitLabDuoEntry = entries.some(e => e.id === 'gitlab-duo-chat' && e.provider === 'gitlabduo');
       ok(hasGitLabDuoEntry, "entri 'gitlab-duo-chat' milik provider gitlabduo ada");
 
+      const hasRequestyEntry = entries.some(e => e.id === 'azure/gpt-5.4-mini@eastus2' && e.provider === 'requesty');
+      ok(hasRequestyEntry, "entri 'azure/gpt-5.4-mini@eastus2' milik provider requesty ada");
+
       const cfsherlockEntries = entries.filter(e => e.provider === 'cfsherlock');
       ok(cfsherlockEntries.length >= 10, `cfsherlock memiliki entri model aktif di catalog (${cfsherlockEntries.length} ditemukan)`);
     }

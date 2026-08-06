@@ -379,6 +379,8 @@ function formatModelLabel(id: string): string {
     "anthropic/claude-opus-5-max": "Claude Opus 5 Max",
     "moonshot/kimi-k3-max": "Kimi K3 Max",
     "openai/gpt-5.6-sol-xhigh": "GPT-5.6 Sol XHigh",
+    "azure/gpt-5.4-mini@eastus2": "Azure GPT-5.4 Mini",
+    "requesty/gpt-5.4-mini": "Azure GPT-5.4 Mini",
     "gemini-2.5-flash": "Gemini 2.5 Flash",
     "gemini-2.5-pro": "Gemini 2.5 Pro",
     "gemini-2.0-flash": "Gemini 2.0 Flash",
@@ -1372,6 +1374,127 @@ async function callGitLabDuo(messages: any[], modelName: string, executionLogs: 
   return { text: responseText, logs: executionLogs };
 }
 
+// 10. Requesty.ai AI Router (OpenAI-compatible /v1/chat/completions)
+async function callRequesty(messages: any[], modelName: string, executionLogs: any[], onProgress?: Function, activeFile?: string) {
+  const reqKey = process.env.REQUESTY_API_KEY || process.env.REQUESTY_KEY;
+  if (!reqKey) throw new Error("REQUESTY_API_KEY environment variable missing");
+
+  const model = modelName || "azure/gpt-5.4-mini@eastus2";
+  const endpoint = process.env.REQUESTY_AI_ENDPOINT || "https://router.requesty.ai/v1/chat/completions";
+  const tools = getOpenAiTools();
+  const reqMessages = [
+    { role: "system", content: buildSystemPrompt(ACTIVE_PERSONA_ID, undefined, messages, activeFile) },
+    ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
+  ];
+
+  onProgress?.({ type: 'status', data: { message: formatModelLabel(model) } });
+
+  let resp = await robustFetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${reqKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      messages: reqMessages,
+      tools,
+      tool_choice: "auto",
+      max_tokens: 8192,
+      temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
+    })
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`HTTP ${resp.status}: ${errText.slice(0, 150) || "Permintaan Requesty ditolak"}`);
+  }
+  let data = await resp.json();
+  if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+
+  let turn = 0;
+  const seenToolCalls = new Map<string, any>();
+  const duplicateCallStrikes = { count: 0 };
+  while (data.choices && data.choices[0]?.message?.tool_calls && turn < MAX_TOOL_TURNS) {
+    turn++;
+    const assistantMsg = data.choices[0].message;
+    if (!assistantMsg.content) assistantMsg.content = "";
+    const toolCalls = assistantMsg.tool_calls;
+    reqMessages.push(assistantMsg);
+
+    const toolPromises = toolCalls.map(async (call: any) => {
+      const toolName = call.function.name;
+      let toolArgs = {};
+      try { toolArgs = JSON.parse(call.function.arguments || "{}"); } catch (_) {}
+
+      safeConsoleLog(`[Requesty Tool] Calling Parallel: ${toolName}`, toolArgs);
+      onProgress?.({ type: 'tool_start', data: { toolName, toolArgs } });
+
+      const result = await executeToolDeduped(toolName, toolArgs, onProgress, seenToolCalls, duplicateCallStrikes);
+
+      db.addLog({ timestamp: new Date().toISOString(), toolName, args: toolArgs, result });
+      executionLogs.push({ toolName, args: toolArgs, result });
+      onProgress?.({ type: 'tool_result', data: { toolName, result } });
+
+      return {
+        role: "tool",
+        tool_call_id: call.id,
+        content: JSON.stringify(result)
+      };
+    });
+
+    const toolResponses = await Promise.all(toolPromises);
+    reqMessages.push(...(toolResponses as any));
+
+    resp = await robustFetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${reqKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        messages: reqMessages,
+        tools,
+        tool_choice: "auto",
+        max_tokens: 8192,
+        temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
+      })
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      throw new Error(`HTTP ${resp.status}: ${errText.slice(0, 150) || "Permintaan Requesty ditolak"}`);
+    }
+    data = await resp.json();
+    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+  }
+
+  const stillWantsTools = !!(data.choices && data.choices[0]?.message?.tool_calls);
+  const msgObj = data.choices && data.choices[0]?.message ? data.choices[0].message : {};
+  let responseText = (msgObj.content || msgObj.reasoning || msgObj.reasoning_content || "").trim();
+  if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT && !responseText) {
+    const text = duplicateToolLoopMessage(executionLogs);
+    onProgress?.({ type: 'chunk', data: { text } });
+    return { text, logs: executionLogs };
+  }
+  if (!responseText) {
+    if (stillWantsTools) {
+      const text = toolBudgetExhaustedMessage(executionLogs);
+      onProgress?.({ type: 'chunk', data: { text } });
+      return { text, logs: executionLogs };
+    }
+    if (executionLogs.length > 0) {
+      responseText = "✅ Tugas selesai dijalankan via tools:\n\n" + executionLogs.map(l => `- **${l.toolName}**: ${l.result?.message || l.result?.status || "ok"}`).join("\n");
+      onProgress?.({ type: 'chunk', data: { text: responseText } });
+      return { text: responseText, logs: executionLogs };
+    }
+    throw new Error("Provider returned empty response content");
+  }
+
+  onProgress?.({ type: 'chunk', data: { text: responseText } });
+  return { text: responseText, logs: executionLogs };
+}
+
 // Honest last-resort fallback — by the time we get here, every provider in the failover chain
 // already failed, so there is nothing real to retry. Tell the user the truth instead of faking success.
 async function callTurboFallback(_messages: any[], executionLogs: any[], onProgress?: Function, failureReasons: string[] = []) {
@@ -1382,6 +1505,7 @@ async function callTurboFallback(_messages: any[], executionLogs: any[], onProgr
   if (process.env.OPENAI_API_KEY || process.env.OPENAI_KEY) configured.push("OpenAI");
   if (process.env.CF_SHERLOCK_KEY || process.env.CLOUDFERRO_SHERLOCK_API_KEY || process.env.CLOUDFERRO_KEY) configured.push("CloudFerro Sherlock");
   if (process.env.GITLAB_DUO_KEY || process.env.GITLAB_TOKEN || process.env.GITLAB_PAT) configured.push("GitLab Duo");
+  if (process.env.REQUESTY_API_KEY || process.env.REQUESTY_KEY) configured.push("Requesty");
 
   // Laporkan penyebab yang SEBENARNYA. Versi lama selalu menyatakan
   // "semua mengalami 429 Rate Limit", padahal kegagalan paling umum adalah
@@ -1432,6 +1556,7 @@ export async function runOrchestrator
   const DEFAULT_MODEL: Record<string, string> = {
     cfsherlock: "anthropic/claude-opus-5-max",
     gitlabduo: "gitlab-duo-chat",
+    requesty: "azure/gpt-5.4-mini@eastus2",
   };
   const model = rawModel && rawModel !== "gemini-3.6-flash"
     ? rawModel
@@ -1459,6 +1584,7 @@ export async function runOrchestrator
     ollama: "oci",
     sherlock: "cfsherlock", cloudferro: "cfsherlock",
     gitlab: "gitlabduo", gitlabduo: "gitlabduo", duo: "gitlabduo",
+    requesty: "requesty", rqsty: "requesty",
   };
   const norm = (n: string) => PROVIDER_ALIAS[n] || n;
 
@@ -1477,7 +1603,8 @@ export async function runOrchestrator
     { name: "openrouter", model: "google/gemini-2.0-flash-001" },
     { name: "openai", model: "gpt-4o-mini" },
     { name: "cfai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
-    { name: "gitlabduo", model: "gitlab-duo-chat" }
+    { name: "gitlabduo", model: "gitlab-duo-chat" },
+    { name: "requesty", model: "azure/gpt-5.4-mini@eastus2" }
   ];
 
   const tried = new Set<string>();
@@ -1514,6 +1641,7 @@ export async function runOrchestrator
     if ((p.name === "roadqwen" || p.name === "qwen" || p.name === "qwen-cloud") && !(process.env.ROADQWEN_KEY || process.env.QWEN_KEY || process.env.DASHSCOPE_API_KEY)) continue;
     if (p.name === "cfsherlock" && !(process.env.CF_SHERLOCK_KEY || process.env.CLOUDFERRO_SHERLOCK_API_KEY || process.env.CLOUDFERRO_KEY)) continue;
     if (p.name === "gitlabduo" && !(process.env.GITLAB_DUO_KEY || process.env.GITLAB_TOKEN || process.env.GITLAB_PAT)) continue;
+    if (p.name === "requesty" && !(process.env.REQUESTY_API_KEY || process.env.REQUESTY_KEY)) continue;
 
     try {
       safeConsoleLog(`[Orchestrator] Attempting provider: ${p.name} (${p.model})`);
@@ -1536,6 +1664,8 @@ export async function runOrchestrator
         result = await callCloudFerro(messages, p.model, executionLogs, onProgress, options.activeFile);
       } else if (p.name === "gitlabduo") {
         result = await callGitLabDuo(messages, p.model, executionLogs, onProgress, options.activeFile);
+      } else if (p.name === "requesty") {
+        result = await callRequesty(messages, p.model, executionLogs, onProgress, options.activeFile);
       }
 
       return result;
