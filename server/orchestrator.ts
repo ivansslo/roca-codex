@@ -1126,6 +1126,19 @@ async function callCloudFerro(messages: any[], modelName: string, executionLogs:
   if (!cfKey) throw new Error("CF_SHERLOCK_KEY environment variable missing");
 
   const model = modelName || "anthropic/claude-opus-5-max";
+  const cfModelMap: Record<string, string> = {
+    "anthropic/claude-opus-5-max": "mistralai/Mistral-Small-4-119B-2603",
+    "moonshot/kimi-k3-max": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+    "openai/gpt-5.6-sol-xhigh": "openai/gpt-oss-120b",
+    "gemini-2.5-flash": "MiniMaxAI/MiniMax-M2.5",
+    "gemini-2.5-pro": "meta-llama/Llama-3.3-70B-Instruct",
+    "gemini-2.0-flash": "google/gemma-4-31B-it",
+    "gpt-4o": "openai/gpt-oss-120b",
+    "gpt-4o-mini": "speakleash/Bielik-11B-v3.0-Instruct",
+    "deepseek/deepseek-r1": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+    "@cf/meta/llama-3.3-70b-instruct-fp8-fast": "meta-llama/Llama-3.3-70B-Instruct",
+  };
+  const actualModel = cfModelMap[model] || (model.includes("/") ? model : "mistralai/Mistral-Small-4-119B-2603");
   const baseUrl = "https://api-sherlock.cloudferro.com/openai/v1";
   const tools = getOpenAiTools();
   const reqMessages = [
@@ -1142,7 +1155,7 @@ async function callCloudFerro(messages: any[], modelName: string, executionLogs:
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model,
+      model: actualModel,
       messages: reqMessages,
       tools,
       tool_choice: "auto",
@@ -1445,6 +1458,9 @@ export async function runOrchestrator
   // Urutan dari PROVIDER dulu, baru sisanya sebagai jaring pengaman.
   const providersToTry = [
     { name: norm(provider), model: model },
+    { name: "cfsherlock", model: "anthropic/claude-opus-5-max" },
+    { name: "cfsherlock", model: "moonshot/kimi-k3-max" },
+    { name: "cfsherlock", model: "openai/gpt-5.6-sol-xhigh" },
     ...providerList.slice(1).map(n => ({ name: norm(n), model: DEFAULT_MODEL[norm(n)] || "" }))
       .filter(p => p.model),
     { name: "gemini", model: "gemini-2.5-flash" },
@@ -1453,7 +1469,6 @@ export async function runOrchestrator
     { name: "openrouter", model: "google/gemini-2.0-flash-001" },
     { name: "openai", model: "gpt-4o-mini" },
     { name: "cfai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
-    { name: "cfsherlock", model: "anthropic/claude-opus-5-max" },
     { name: "gitlabduo", model: "gitlab-duo-chat" }
   ];
 
