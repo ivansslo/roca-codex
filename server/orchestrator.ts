@@ -1130,6 +1130,7 @@ async function callCloudFerro(messages: any[], modelName: string, executionLogs:
     "anthropic/claude-opus-5-max": "mistralai/Mistral-Small-4-119B-2603",
     "moonshot/kimi-k3-max": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
     "openai/gpt-5.6-sol-xhigh": "openai/gpt-oss-120b",
+    "MiniMaxAI/MiniMax-M2.5": "MiniMaxAI/MiniMax-M2.5",
     "gemini-2.5-flash": "MiniMaxAI/MiniMax-M2.5",
     "gemini-2.5-pro": "meta-llama/Llama-3.3-70B-Instruct",
     "gemini-2.0-flash": "google/gemma-4-31B-it",
@@ -1467,6 +1468,7 @@ export async function runOrchestrator
     { name: "cfsherlock", model: "anthropic/claude-opus-5-max" },
     { name: "cfsherlock", model: "moonshot/kimi-k3-max" },
     { name: "cfsherlock", model: "openai/gpt-5.6-sol-xhigh" },
+    { name: "cfsherlock", model: "MiniMaxAI/MiniMax-M2.5" },
     ...providerList.slice(1).map(n => ({ name: norm(n), model: DEFAULT_MODEL[norm(n)] || "" }))
       .filter(p => p.model),
     { name: "gemini", model: "gemini-2.5-flash" },
