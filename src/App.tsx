@@ -175,30 +175,27 @@ export default function App() {
       createdAt: new Date().toISOString(),
       messages: [{ id: 'welcome_' + Date.now(), role: 'model', text: "🤖 **RocAgent Orchestrator Online.** Apa yang mau kita kerjakan hari ini?" }]
     };
-    try {
-      const res = await fetch('/api/chat-sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session: ns }) });
-      if (res.ok) { setSessions(prev => [ns, ...prev]); setActiveSessionId(ns.id); setActiveTab('chat'); }
-    } catch (e) { console.error(e); }
+    // Optimistic UI update for instant zero-latency feedback
+    setSessions(prev => [ns, ...prev]);
+    setActiveSessionId(ns.id);
+    setActiveTab('chat');
+    fetch('/api/chat-sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session: ns }) })
+      .catch(e => console.error(e));
   };
 
   const deleteSession = async (id: string) => {
     if (!isPro && !confirm("Hapus sesi ini?")) return;
-    try {
-      const res = await fetch(`/api/chat-sessions/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        const rem = sessions.filter(s => s.id !== id);
-        setSessions(rem);
-        if (activeSessionId === id && rem.length > 0) setActiveSessionId(rem[0].id);
-        else if (rem.length === 0) await createNewSession("Main Workspace");
-      }
-    } catch (e) { console.error(e); }
+    const rem = sessions.filter(s => s.id !== id);
+    setSessions(rem);
+    if (activeSessionId === id && rem.length > 0) setActiveSessionId(rem[0].id);
+    else if (rem.length === 0) createNewSession("Main Workspace");
+    fetch(`/api/chat-sessions/${id}`, { method: 'DELETE' }).catch(e => console.error(e));
   };
 
   const renameSession = async (id: string, title: string) => {
-    try {
-      const res = await fetch(`/api/chat-sessions/${id}/rename`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
-      if (res.ok) setSessions(prev => prev.map(s => s.id === id ? { ...s, title } : s));
-    } catch (e) { console.error(e); }
+    setSessions(prev => prev.map(s => s.id === id ? { ...s, title } : s));
+    fetch(`/api/chat-sessions/${id}/rename`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) })
+      .catch(e => console.error(e));
   };
 
   useEffect(() => { fetchSessions(); }, []);
