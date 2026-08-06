@@ -1022,6 +1022,18 @@ export const toolImplementations: Record<string, Function> = {
     }
   },
 
+  ssh_run: async (args: { command: string }) => {
+    try {
+      const command = (args.command || "").trim();
+      if (!command) return { status: "error", message: "command is required" };
+      const blocked = guardShell("ssh_run", command);
+      if (blocked) return blocked;
+      return await sshExec(command);
+    } catch (err: any) {
+      return { status: "error", message: err.message };
+    }
+  },
+
   web_searching_module: async (args: { query: string; depth?: string; category?: string }) => {
     try {
       const query = args.query || "";
