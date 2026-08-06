@@ -1205,7 +1205,6 @@ async function callCloudFerro(messages: any[], modelName: string, executionLogs:
 
     const toolResponses = await Promise.all(toolPromises);
     reqMessages.push(...(toolResponses as any));
-    if (false) break;
 
     resp = await robustFetch(`${baseUrl}/chat/completions`, {
       method: "POST",
@@ -1214,35 +1213,42 @@ async function callCloudFerro(messages: any[], modelName: string, executionLogs:
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model,
+        model: actualModel,
         messages: reqMessages,
         tools,
         tool_choice: "auto",
+        max_tokens: 8192,
+        max_completion_tokens: 8192,
         temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
       })
     });
 
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      throw new Error(`HTTP ${resp.status}: ${errText.slice(0, 150) || "Permintaan ditolak"}`);
+    }
     data = await resp.json();
+    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
   }
 
   const stillWantsTools = !!(data.choices && data.choices[0]?.message?.tool_calls);
-  const responseText = data.choices && data.choices[0]?.message?.content ? data.choices[0].message.content : "";
+  const msgObj = data.choices && data.choices[0]?.message ? data.choices[0].message : {};
+  let responseText = (msgObj.content || msgObj.reasoning || msgObj.reasoning_content || "").trim();
   if (duplicateCallStrikes.count >= DUPLICATE_CALL_STRIKE_LIMIT && (!responseText || !responseText.trim())) {
-    // Loop was force-stopped by the circuit breaker (model kept repeating an
-    // identical tool call), not a real empty response or a genuine turn-budget
-    // exhaustion. Ground the answer in whatever the repeated tool actually returned.
     const text = duplicateToolLoopMessage(executionLogs);
     onProgress?.({ type: 'chunk', data: { text } });
     return { text, logs: executionLogs };
   }
   if (!responseText || !responseText.trim()) {
     if (stillWantsTools) {
-      // Loop exited because MAX_TOOL_TURNS ran out while the model was still trying
-      // to call more tools, not because the provider returned nothing. See
-      // toolBudgetExhaustedMessage() for the full incident this fixes.
       const text = toolBudgetExhaustedMessage(executionLogs);
       onProgress?.({ type: 'chunk', data: { text } });
       return { text, logs: executionLogs };
+    }
+    if (executionLogs.length > 0) {
+      responseText = "✅ Tugas selesai dijalankan via tools:\n\n" + executionLogs.map(l => `- **${l.toolName}**: ${l.result?.message || l.result?.status || "ok"}`).join("\n");
+      onProgress?.({ type: 'chunk', data: { text: responseText } });
+      return { text: responseText, logs: executionLogs };
     }
     throw new Error("Provider returned empty response content");
   }
