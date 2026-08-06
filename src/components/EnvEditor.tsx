@@ -14,15 +14,15 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
 
-  // Key-value form state
+  // Key-value form state (AI Provider Keys Only)
+  const [cfSherlockKey, setCfSherlockKey] = useState('');
+  const [gitlabDuoKey, setGitlabDuoKey] = useState('');
   const [geminiKey, setGeminiKey] = useState('');
   const [groqKey, setGroqKey] = useState('');
   const [openAiKey, setOpenAiKey] = useState('');
-  const [tailscaleKey, setTailscaleKey] = useState('');
-  const [tailscaleIp, setTailscaleIp] = useState('');
-  const [githubPat, setGithubPat] = useState('');
-  const [clerkPk, setClerkPk] = useState('');
-  const [clerkSk, setClerkSk] = useState('');
+  const [openRouterKey, setOpenRouterKey] = useState('');
+  const [cfAiToken, setCfAiToken] = useState('');
+  const [cfAccount, setCfAccount] = useState('');
 
   // Visibility toggles
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
@@ -45,17 +45,14 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
           });
         }
 
-        setGeminiKey(varsMap['GEMINI_API_KEY'] || '');
-        setGroqKey(varsMap['GROQ_KEY'] || '');
-        setOpenAiKey(varsMap['OPENAI_API_KEY'] || '');
-        // Mapping field ↔ env key sempat tertukar (bad merge): Tailscale memuat
-        // OR_KEY, IP memuat CF_AI_TOKEN, PAT memuat CF_ACCOUNT_ID — bisa menimpa
-        // kredensial yang salah saat form disimpan. Dikembalikan ke pasangan benar.
-        setTailscaleKey(varsMap['TAILSCALE_KEY'] || varsMap['TAILSCALE_AUTH_KEY'] || '');
-        setTailscaleIp(varsMap['TAILSCALE_IP'] || '');
-        setGithubPat(varsMap['GITHUB_PAT'] || '');
-        setClerkPk(varsMap['CLERK_PK'] || '');
-        setClerkSk(varsMap['CLERK_SK'] || '');
+        setCfSherlockKey(varsMap['CF_SHERLOCK_KEY'] || varsMap['CLOUDFERRO_SHERLOCK_API_KEY'] || '');
+        setGitlabDuoKey(varsMap['GITLAB_DUO_KEY'] || varsMap['GITLAB_TOKEN'] || '');
+        setGeminiKey(varsMap['GEMINI_API_KEY'] || varsMap['GOOGLE_API_KEY'] || '');
+        setGroqKey(varsMap['GROQ_KEY'] || varsMap['GROQ_API_KEY'] || '');
+        setOpenAiKey(varsMap['OPENAI_API_KEY'] || varsMap['OPENAI_KEY'] || '');
+        setOpenRouterKey(varsMap['OPENROUTER_API_KEY'] || varsMap['OR_KEY'] || '');
+        setCfAiToken(varsMap['CF_AI_TOKEN'] || varsMap['CF_TOKEN'] || '');
+        setCfAccount(varsMap['CF_ACCOUNT'] || varsMap['CLOUDFLARE_ACCOUNT_ID'] || '');
       }
     } catch (err: any) {
       setErrorNotice(`Failed to load environment variables: ${err.message}`);
@@ -84,14 +81,14 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
       // save button never worked. Masked values (••••xxxx) are skipped
       // server-side, so leaving a field untouched keeps the real secret.
       const envs = Object.entries({
+        CF_SHERLOCK_KEY: cfSherlockKey,
+        GITLAB_DUO_KEY: gitlabDuoKey,
         GEMINI_API_KEY: geminiKey,
         GROQ_KEY: groqKey,
         OPENAI_API_KEY: openAiKey,
-        TAILSCALE_KEY: tailscaleKey,
-        TAILSCALE_IP: tailscaleIp,
-        GITHUB_PAT: githubPat,
-        CLERK_PK: clerkPk,
-        CLERK_SK: clerkSk
+        OPENROUTER_API_KEY: openRouterKey,
+        CF_AI_TOKEN: cfAiToken,
+        CF_ACCOUNT: cfAccount
       }).map(([key, value]) => ({ key, value }));
 
       const res = await fetch('/api/env/update', {
@@ -142,6 +139,40 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
       setSaving(false);
     }
   };
+
+  const KeyCard = ({ label, desc, stateKey, value, setValue, placeholder }: {
+    label: string;
+    desc: string;
+    stateKey: string;
+    value: string;
+    setValue: (v: string) => void;
+    placeholder: string;
+  }) => (
+    <div className="space-y-1.5 bg-theme-input/40 p-3.5 rounded-xl border border-theme-border">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-bold text-theme-text-primary flex items-center gap-1.5 font-mono">
+          <span>{label}</span>
+          <span className="text-[10px] text-indigo-400 font-sans font-normal">({desc})</span>
+        </label>
+        <button
+          type="button"
+          onClick={() => toggleShowKey(stateKey)}
+          className="text-theme-text-muted hover:text-theme-text-primary text-[10px] flex items-center gap-1 cursor-pointer"
+        >
+          {showKeys[stateKey] ? <EyeOff size={11} /> : <Eye size={11} />}
+          {showKeys[stateKey] ? 'Sembunyikan' : 'Tampilkan'}
+        </button>
+      </div>
+      <input
+        type={showKeys[stateKey] ? 'text' : 'password'}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        disabled={!isPro}
+        className="w-full bg-neutral-950 font-mono text-xs text-emerald-400 border border-theme-border rounded-lg px-3 py-2 focus:ring-1 focus:ring-indigo-500 outline-none disabled:opacity-60"
+      />
+    </div>
+  );
 
   return (
     <div className="bg-theme-sidebar border border-theme-border rounded-2xl p-5 space-y-5 relative overflow-hidden">
@@ -219,153 +250,70 @@ export const EnvEditor: React.FC<EnvEditorProps> = ({ isPro, userEmail, onSaved 
       {editorMode === 'form' && (
         <form onSubmit={handleSaveForm} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            
-            {/* Gemini API Key */}
-            <div className="space-y-1.5 bg-theme-input/40 p-3.5 rounded-xl border border-theme-border">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-theme-text-primary flex items-center gap-1.5 font-mono">
-                  <span>GEMINI_API_KEY</span>
-                  <span className="text-[10px] text-indigo-400 font-sans font-normal">(Google Gemini)</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => toggleShowKey('gemini')}
-                  className="text-theme-text-muted hover:text-theme-text-primary text-[10px] flex items-center gap-1 cursor-pointer"
-                >
-                  {showKeys['gemini'] ? <EyeOff size={11} /> : <Eye size={11} />}
-                  {showKeys['gemini'] ? 'Sembunyikan' : 'Tampilkan'}
-                </button>
-              </div>
-              <input
-                type={showKeys['gemini'] ? 'text' : 'password'}
-                placeholder="AIzaSy..."
-                value={geminiKey}
-                onChange={(e) => setGeminiKey(e.target.value)}
-                disabled={!isPro}
-                className="w-full bg-neutral-950 font-mono text-xs text-emerald-400 border border-theme-border rounded-lg px-3 py-2 focus:ring-1 focus:ring-indigo-500 outline-none disabled:opacity-60"
-              />
-            </div>
-
-            {/* Groq Cloud Key */}
-            <div className="space-y-1.5 bg-theme-input/40 p-3.5 rounded-xl border border-theme-border">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-theme-text-primary flex items-center gap-1.5 font-mono">
-                  <span>GROQ_KEY</span>
-                  <span className="text-[10px] text-indigo-400 font-sans font-normal">(Groq Llama 3/Mixtral)</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => toggleShowKey('groq')}
-                  className="text-theme-text-muted hover:text-theme-text-primary text-[10px] flex items-center gap-1 cursor-pointer"
-                >
-                  {showKeys['groq'] ? <EyeOff size={11} /> : <Eye size={11} />}
-                  {showKeys['groq'] ? 'Sembunyikan' : 'Tampilkan'}
-                </button>
-              </div>
-              <input
-                type={showKeys['groq'] ? 'text' : 'password'}
-                placeholder="gsk_..."
-                value={groqKey}
-                onChange={(e) => setGroqKey(e.target.value)}
-                disabled={!isPro}
-                className="w-full bg-neutral-950 font-mono text-xs text-emerald-400 border border-theme-border rounded-lg px-3 py-2 focus:ring-1 focus:ring-indigo-500 outline-none disabled:opacity-60"
-              />
-            </div>
-
-            {/* OpenAI Key */}
-            <div className="space-y-1.5 bg-theme-input/40 p-3.5 rounded-xl border border-theme-border">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-theme-text-primary flex items-center gap-1.5 font-mono">
-                  <span>OPENAI_API_KEY</span>
-                  <span className="text-[10px] text-indigo-400 font-sans font-normal">(OpenAI GPT-4o)</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => toggleShowKey('openai')}
-                  className="text-theme-text-muted hover:text-theme-text-primary text-[10px] flex items-center gap-1 cursor-pointer"
-                >
-                  {showKeys['openai'] ? <EyeOff size={11} /> : <Eye size={11} />}
-                  {showKeys['openai'] ? 'Sembunyikan' : 'Tampilkan'}
-                </button>
-              </div>
-              <input
-                type={showKeys['openai'] ? 'text' : 'password'}
-                placeholder="sk-proj-..."
-                value={openAiKey}
-                onChange={(e) => setOpenAiKey(e.target.value)}
-                disabled={!isPro}
-                className="w-full bg-neutral-950 font-mono text-xs text-emerald-400 border border-theme-border rounded-lg px-3 py-2 focus:ring-1 focus:ring-indigo-500 outline-none disabled:opacity-60"
-              />
-            </div>
-
-            {/* Tailscale Key */}
-            <div className="space-y-1.5 bg-theme-input/40 p-3.5 rounded-xl border border-theme-border">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-theme-text-primary flex items-center gap-1.5 font-mono">
-                  <span>TAILSCALE_KEY</span>
-                  <span className="text-[10px] text-indigo-400 font-sans font-normal">(OpenRouter)</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => toggleShowKey('tailscale')}
-                  className="text-theme-text-muted hover:text-theme-text-primary text-[10px] flex items-center gap-1 cursor-pointer"
-                >
-                  {showKeys['tailscale'] ? <EyeOff size={11} /> : <Eye size={11} />}
-                  {showKeys['tailscale'] ? 'Sembunyikan' : 'Tampilkan'}
-                </button>
-              </div>
-              <input
-                type={showKeys['tailscale'] ? 'text' : 'password'}
-                placeholder="sk-or-v1-..."
-                value={tailscaleKey}
-                onChange={(e) => setTailscaleKey(e.target.value)}
-                disabled={!isPro}
-                className="w-full bg-neutral-950 font-mono text-xs text-emerald-400 border border-theme-border rounded-lg px-3 py-2 focus:ring-1 focus:ring-indigo-500 outline-none disabled:opacity-60"
-              />
-            </div>
-
-            {/* Tailscale IP */}
-            <div className="space-y-1.5 bg-theme-input/40 p-3.5 rounded-xl border border-theme-border">
-              <label className="text-xs font-bold text-theme-text-primary flex items-center gap-1.5 font-mono">
-                <span>TAILSCALE_IP</span>
-                <span className="text-[10px] text-indigo-400 font-sans font-normal">(Cloudflare — token "Workers AI")</span>
-              </label>
-              <input
-                type="text"
-                placeholder="cfut_... / cfat_..."
-                value={tailscaleIp}
-                onChange={(e) => setTailscaleIp(e.target.value)}
-                disabled={!isPro}
-                className="w-full bg-neutral-950 font-mono text-xs text-indigo-300 border border-theme-border rounded-lg px-3 py-2 focus:ring-1 focus:ring-indigo-500 outline-none disabled:opacity-60"
-              />
-            </div>
-
-            {/* GitHub PAT */}
-            <div className="space-y-1.5 bg-theme-input/40 p-3.5 rounded-xl border border-theme-border">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-theme-text-primary flex items-center gap-1.5 font-mono">
-                  <span>GITHUB_PAT</span>
-                  <span className="text-[10px] text-indigo-400 font-sans font-normal">(Cloudflare Account ID — wajib, tanpa ini auth gagal)</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => toggleShowKey('github')}
-                  className="text-theme-text-muted hover:text-theme-text-primary text-[10px] flex items-center gap-1 cursor-pointer"
-                >
-                  {showKeys['github'] ? <EyeOff size={11} /> : <Eye size={11} />}
-                  {showKeys['github'] ? 'Sembunyikan' : 'Tampilkan'}
-                </button>
-              </div>
-              <input
-                type={showKeys['github'] ? 'text' : 'password'}
-                placeholder="37c44b..."
-                value={githubPat}
-                onChange={(e) => setGithubPat(e.target.value)}
-                disabled={!isPro}
-                className="w-full bg-neutral-950 font-mono text-xs text-emerald-400 border border-theme-border rounded-lg px-3 py-2 focus:ring-1 focus:ring-indigo-500 outline-none disabled:opacity-60"
-              />
-            </div>
-
+            <KeyCard
+              label="CF_SHERLOCK_KEY"
+              desc="CloudFerro Sherlock — Claude Opus 5 Max, Kimi K3 Max, GPT-5.6 Sol"
+              stateKey="cfsherlock"
+              value={cfSherlockKey}
+              setValue={setCfSherlockKey}
+              placeholder="XVyju8..."
+            />
+            <KeyCard
+              label="GITLAB_DUO_KEY"
+              desc="GitLab Duo — Claude 3.5 Sonnet"
+              stateKey="gitlabduo"
+              value={gitlabDuoKey}
+              setValue={setGitlabDuoKey}
+              placeholder="glpat-..."
+            />
+            <KeyCard
+              label="GEMINI_API_KEY"
+              desc="Google Gemini — 2.5 Flash, 2.5 Pro, 2.0 Flash"
+              stateKey="gemini"
+              value={geminiKey}
+              setValue={setGeminiKey}
+              placeholder="AIzaSy..."
+            />
+            <KeyCard
+              label="GROQ_KEY"
+              desc="Groq — Llama 3.3 70B / GPT-OSS 120B"
+              stateKey="groq"
+              value={groqKey}
+              setValue={setGroqKey}
+              placeholder="gsk_..."
+            />
+            <KeyCard
+              label="OPENAI_API_KEY"
+              desc="OpenAI — GPT-4o, GPT-4o mini"
+              stateKey="openai"
+              value={openAiKey}
+              setValue={setOpenAiKey}
+              placeholder="sk-proj-..."
+            />
+            <KeyCard
+              label="OPENROUTER_API_KEY"
+              desc="OpenRouter — DeepSeek R1"
+              stateKey="openrouter"
+              value={openRouterKey}
+              setValue={setOpenRouterKey}
+              placeholder="sk-or-v1-..."
+            />
+            <KeyCard
+              label="CF_AI_TOKEN"
+              desc="Cloudflare Workers AI — Token"
+              stateKey="cfaitoken"
+              value={cfAiToken}
+              setValue={setCfAiToken}
+              placeholder="cfut_... / cfat_..."
+            />
+            <KeyCard
+              label="CF_ACCOUNT"
+              desc="Cloudflare Workers AI — Account ID"
+              stateKey="cfaccount"
+              value={cfAccount}
+              setValue={setCfAccount}
+              placeholder="37c44b..."
+            />
           </div>
 
           <div className="flex items-center justify-between pt-2">
