@@ -44,7 +44,7 @@ export function Header(p: HeaderProps) {
           </h2>
           {activeModel && (
             <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 text-xs font-mono select-none">
-              <span className="text-sm leading-none">{activeModel.icon || '🤖'}</span>
+              {activeModel.icon ? <span className="text-sm leading-none">{activeModel.icon}</span> : null}
               <span className="text-[10px] font-bold uppercase tracking-wider">{activeModel.name}</span>
             </div>
           )}

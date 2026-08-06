@@ -78,7 +78,7 @@ export function Sidebar({
                       ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/40 font-bold cursor-pointer'
                       : 'text-theme-text-secondary hover:bg-theme-btn-hover hover:text-theme-text-primary cursor-pointer'
                 }`}>
-                <span className="flex items-center gap-2 truncate"><span className="text-sm">{m.icon || '🤖'}</span><span className="truncate">{m.name}</span></span>
+                <span className="flex items-center gap-2 truncate">{m.icon ? <span className="text-sm">{m.icon}</span> : null}<span className="truncate">{m.name}</span></span>
                 {sel && usable && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
                 {!usable && <span className="text-[9px] uppercase tracking-wide opacity-70">no key</span>}
               </button>

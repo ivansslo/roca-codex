@@ -41,7 +41,7 @@ export function ModelQuickSwitch({ availableModels, selectedModel, selectedProvi
         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-theme-border bg-theme-btn-hover text-theme-text-secondary hover:text-theme-text-primary text-xs font-medium transition-all cursor-pointer max-w-[180px]"
         title={`Model aktif: ${current?.name || selectedModel} (${selectedProvider}) — klik untuk ganti`}
       >
-        <span className="text-sm leading-none flex-shrink-0">{current?.icon || '🤖'}</span>
+        {current?.icon ? <span className="text-sm leading-none flex-shrink-0">{current.icon}</span> : null}
         <span className="truncate">{current?.name || selectedModel}</span>
         <ChevronDown size={12} className="text-theme-text-muted flex-shrink-0" />
       </button>
@@ -67,7 +67,7 @@ export function ModelQuickSwitch({ availableModels, selectedModel, selectedProvi
                     onClick={() => { onSelectModel(m); setOpen(false); }}
                     className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${active ? 'bg-indigo-600/15' : 'hover:bg-theme-btn-hover'}`}
                   >
-                    <span className="text-sm">{m.icon || '🤖'}</span>
+                    {m.icon ? <span className="text-sm">{m.icon}</span> : null}
                     <span className={`flex-1 truncate text-xs ${active ? 'text-indigo-300 font-bold' : 'text-theme-text-primary'}`}>{m.name}</span>
                     {active && <Check size={12} className="text-indigo-400 flex-shrink-0" />}
                   </button>

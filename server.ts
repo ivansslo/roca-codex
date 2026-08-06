@@ -110,19 +110,19 @@ if (HOST !== "127.0.0.1" && HOST !== "localhost" && HOST !== "::1") {
     } as Record<string, boolean>;
 
     const catalog = [
-      { id: "azure/gpt-5.4-mini@eastus2", name: "Azure GPT-5.4 Mini (Requesty)", provider: "requesty", icon: "🌐" },
-      { id: "gitlab-duo-chat", name: "GitLab Duo (Claude 3.5 Sonnet)", provider: "gitlabduo", icon: "🦊" },
-      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Fast)", provider: "cfsherlock", icon: "⚡" },
-      { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Reasoning)", provider: "cfsherlock", icon: "🧠" },
-      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "cfsherlock", icon: "⚡" },
-      { id: "gpt-4o", name: "OpenAI GPT-4o", provider: "cfsherlock", icon: "🟢" },
-      { id: "gpt-4o-mini", name: "OpenAI GPT-4o mini", provider: "cfsherlock", icon: "🟢" },
-      { id: "deepseek/deepseek-r1", name: "OpenRouter DeepSeek R1", provider: "cfsherlock", icon: "🌐" },
-      { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", name: "Cloudflare Llama 3.3", provider: "cfsherlock", icon: "☁️" },
-      { id: "MiniMaxAI/MiniMax-M2.5", name: "MiniMax M2.5", provider: "cfsherlock", icon: "🇵🇱" },
-      { id: "anthropic/claude-opus-5-max", name: "Claude Opus 5 Max", provider: "cfsherlock", icon: "🇵🇱" },
-      { id: "moonshot/kimi-k3-max", name: "Kimi K3 Max", provider: "cfsherlock", icon: "🇵🇱" },
-      { id: "openai/gpt-5.6-sol-xhigh", name: "GPT-5.6 Sol XHigh (Codex-Harness)", provider: "cfsherlock", icon: "🇵🇱" }
+      { id: "MiniMaxAI/MiniMax-M2.5", name: "MiniMax M2.5", provider: "cfsherlock", icon: "" },
+      { id: "azure/gpt-5.4-mini@eastus2", name: "Azure GPT-5.4 Mini (Requesty)", provider: "requesty", icon: "" },
+      { id: "gitlab-duo-chat", name: "GitLab Duo (Claude 3.5 Sonnet)", provider: "gitlabduo", icon: "" },
+      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Fast)", provider: "cfsherlock", icon: "" },
+      { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Reasoning)", provider: "cfsherlock", icon: "" },
+      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "cfsherlock", icon: "" },
+      { id: "gpt-4o", name: "OpenAI GPT-4o", provider: "cfsherlock", icon: "" },
+      { id: "gpt-4o-mini", name: "OpenAI GPT-4o mini", provider: "cfsherlock", icon: "" },
+      { id: "deepseek/deepseek-r1", name: "OpenRouter DeepSeek R1", provider: "cfsherlock", icon: "" },
+      { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", name: "Cloudflare Llama 3.3", provider: "cfsherlock", icon: "" },
+      { id: "anthropic/claude-opus-5-max", name: "Claude Opus 5 Max", provider: "cfsherlock", icon: "" },
+      { id: "moonshot/kimi-k3-max", name: "Kimi K3 Max", provider: "cfsherlock", icon: "" },
+      { id: "openai/gpt-5.6-sol-xhigh", name: "GPT-5.6 Sol XHigh (Codex-Harness)", provider: "cfsherlock", icon: "" }
     ];
 
     const models = catalog.map(m => ({
