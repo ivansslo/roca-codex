@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import Markdown from 'react-markdown';
 import { Bot, Loader2, PlayCircle, Square } from 'lucide-react';
 import OrchestraVisualizer from './OrchestraVisualizer';
@@ -49,11 +49,14 @@ interface AgentOrchestraTabProps {
   selectedModel: string;
   selectedProvider: string;
   persona: string;
+  initialPrompt?: string;
+  initialPipeline?: AgentMultiPipelineId;
+  onClearInitialPrompt?: () => void;
 }
 
-export function AgentOrchestraTab({ selectedModel, selectedProvider, persona }: AgentOrchestraTabProps) {
-  const [pipeline, setPipeline] = useState<AgentMultiPipelineId>('fast');
-  const [prompt, setPrompt] = useState('');
+export function AgentOrchestraTab({ selectedModel, selectedProvider, persona, initialPrompt, initialPipeline, onClearInitialPrompt }: AgentOrchestraTabProps) {
+  const [pipeline, setPipeline] = useState<AgentMultiPipelineId>(() => initialPipeline || 'fast');
+  const [prompt, setPrompt] = useState(() => initialPrompt || '');
   const [steps, setSteps] = useState<AgentStep[]>(initialSteps('fast'));
   const [status, setStatus] = useState<'idle' | 'running' | 'completed' | 'failed'>('idle');
   const [activeStepIndex, setActiveStepIndex] = useState(-1);
@@ -73,10 +76,11 @@ export function AgentOrchestraTab({ selectedModel, selectedProvider, persona }: 
     setRunStatusMessage('');
   };
 
-  const handleRun = async () => {
-    if (!prompt.trim() || isRunning) return;
+  const executePipeline = async (targetPrompt: string, targetPipeline: AgentMultiPipelineId) => {
+    if (!targetPrompt.trim() || isRunning) return;
 
-    setSteps(initialSteps(pipeline));
+    const currentRoleOrder = PIPELINE_ROLES[targetPipeline];
+    setSteps(initialSteps(targetPipeline));
     setStatus('running');
     setActiveStepIndex(-1);
     setRunStatusMessage('Menyiapkan pipeline...');
@@ -87,17 +91,17 @@ export function AgentOrchestraTab({ selectedModel, selectedProvider, persona }: 
     try {
       await streamAgentOrchestra(
         {
-          messages: [{ id: 'agent_multi_prompt', role: 'user', text: prompt }],
+          messages: [{ id: 'agent_multi_prompt', role: 'user', text: targetPrompt }],
           model: selectedModel,
           provider: selectedProvider,
           persona,
-          pipeline,
+          pipeline: targetPipeline,
           signal: controller.signal,
         },
         {
           onRunStart: (msg) => setRunStatusMessage(msg),
           onStepStart: ({ role }) => {
-            const idx = roleOrder.indexOf(role as AgentRole);
+            const idx = currentRoleOrder.indexOf(role as AgentRole);
             setActiveStepIndex(idx);
             setRunStatusMessage(`${ROLE_TITLE[role as AgentRole] || role} sedang bekerja...`);
             setSteps((prev) =>
@@ -140,6 +144,22 @@ export function AgentOrchestraTab({ selectedModel, selectedProvider, persona }: 
       abortRef.current = null;
     }
   };
+
+  useEffect(() => {
+    if (initialPrompt && initialPrompt.trim() && !isRunning) {
+      const p = initialPrompt;
+      const pip = initialPipeline || pipeline;
+      setPrompt(p);
+      if (initialPipeline) setPipeline(initialPipeline);
+      const t = setTimeout(() => {
+        executePipeline(p, pip);
+        onClearInitialPrompt?.();
+      }, 150);
+      return () => clearTimeout(t);
+    }
+  }, [initialPrompt]);
+
+  const handleRun = () => executePipeline(prompt, pipeline);
 
   const handleStop = () => {
     abortRef.current?.abort();

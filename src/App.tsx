@@ -51,6 +51,8 @@ export default function App() {
   });
   const [selectedProvider, setSelectedProvider] = useState<string>(() => localStorage.getItem('ROC_PROVIDER') || 'gemini');
   const [persona, setPersona] = useState<string>(() => localStorage.getItem('ROC_PERSONA') || DEFAULT_PERSONA);
+  const [agentMultiPrompt, setAgentMultiPrompt] = useState<string>('');
+  const [agentMultiPipeline, setAgentMultiPipeline] = useState<'fast' | 'engineering'>('fast');
   const abortRef = useRef<AbortController | null>(null);
 
   // ---- User / pro ----
@@ -208,6 +210,29 @@ export default function App() {
   const handleSend = async (text: string, file?: FilePayload) => {
     if (!activeSessionId || !activeSession) return;
     handleManualMaximize();
+
+    const trimmed = (text || '').trim();
+    if (trimmed.startsWith('/agents')) {
+      const parts = trimmed.split(/\s+/);
+      let targetPipeline: 'fast' | 'engineering' = 'fast';
+      let taskParts = parts.slice(1);
+      if (taskParts[0] === 'fast' || taskParts[0] === 'engineering') {
+        targetPipeline = taskParts[0];
+        taskParts = taskParts.slice(1);
+      }
+      const task = taskParts.join(' ').trim();
+      if (!task) {
+        toast.info("Perintah /agents membutuhkan deskripsi tugas: contoh /agents fast audit keamanan sistem");
+        setActiveTab('agents');
+        return;
+      }
+      toast.success(`Memulai Agent Multi (${targetPipeline.toUpperCase()}): ${task.slice(0, 40)}...`);
+      setAgentMultiPrompt(task);
+      setAgentMultiPipeline(targetPipeline);
+      setActiveTab('agents');
+      return;
+    }
+
     const userMsg: Message = { id: Date.now().toString(), role: 'user', text: text || undefined, file };
     const stage1 = [...messages, userMsg];
     await saveSessionMessages(activeSessionId, stage1);
@@ -374,6 +399,9 @@ export default function App() {
               selectedModel={selectedModel}
               selectedProvider={selectedProvider}
               persona={persona}
+              initialPrompt={agentMultiPrompt}
+              initialPipeline={agentMultiPipeline}
+              onClearInitialPrompt={() => setAgentMultiPrompt('')}
             />
           </Suspense>
         )}
