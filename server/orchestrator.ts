@@ -1090,7 +1090,7 @@ async function callCloudFerro(messages: any[], modelName: string, executionLogs:
   const cfKey = process.env.CF_SHERLOCK_KEY || process.env.CLOUDFERRO_SHERLOCK_API_KEY || process.env.CLOUDFERRO_KEY;
   if (!cfKey) throw new Error("CF_SHERLOCK_KEY environment variable missing");
 
-  const model = modelName || "MiniMaxAI/MiniMax-M2.5";
+  const model = modelName || "anthropic/claude-opus-5-max";
   const baseUrl = "https://api-sherlock.cloudferro.com/openai/v1";
   const tools = getOpenAiTools();
   const reqMessages = [
@@ -1255,7 +1255,7 @@ export async function runOrchestrator
   // OpenAI menolaknya. Akibatnya PROVIDER=openai tanpa memilih model di UI
   // selalu gagal pada percobaan pertama.
   const DEFAULT_MODEL: Record<string, string> = {
-    cfsherlock: "MiniMaxAI/MiniMax-M2.5",
+    cfsherlock: "anthropic/claude-opus-5-max",
   };
   const model = rawModel && rawModel !== "gemini-3.6-flash"
     ? rawModel
@@ -1296,7 +1296,7 @@ export async function runOrchestrator
     { name: "openrouter", model: "google/gemini-2.0-flash-001" },
     { name: "openai", model: "gpt-4o-mini" },
     { name: "cfai", model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
-    { name: "cfsherlock", model: "MiniMaxAI/MiniMax-M2.5" }
+    { name: "cfsherlock", model: "anthropic/claude-opus-5-max" }
   ];
 
   const tried = new Set<string>();

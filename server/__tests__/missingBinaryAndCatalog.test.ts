@@ -81,8 +81,8 @@ async function main() {
       const uniquePairs = new Set(pairKeys);
       ok(uniquePairs.size === pairKeys.length, "setiap pasangan (provider, id) di catalog unik (tidak ada baris duplikat persis)");
 
-      const hasGptOssCfSherlock = entries.some(e => e.id === 'openai/gpt-oss-120b' && e.provider === 'cfsherlock');
-      ok(hasGptOssCfSherlock, "entri 'openai/gpt-oss-120b' milik provider cfsherlock ada");
+      const hasGpt56SolCfSherlock = entries.some(e => e.id === 'openai/gpt-5.6-sol-xhigh' && e.provider === 'cfsherlock');
+      ok(hasGpt56SolCfSherlock, "entri 'openai/gpt-5.6-sol-xhigh' milik provider cfsherlock ada");
 
       const cfsherlockEntries = entries.filter(e => e.provider === 'cfsherlock');
       ok(cfsherlockEntries.length >= 10, `cfsherlock memiliki entri model aktif di catalog (${cfsherlockEntries.length} ditemukan)`);

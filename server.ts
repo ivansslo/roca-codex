@@ -115,18 +115,9 @@ if (HOST !== "127.0.0.1" && HOST !== "localhost" && HOST !== "::1") {
       { id: "gpt-4o-mini", name: "OpenAI GPT-4o mini", provider: "cfsherlock", icon: "🟢" },
       { id: "deepseek/deepseek-r1", name: "OpenRouter DeepSeek R1", provider: "cfsherlock", icon: "🌐" },
       { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", name: "Cloudflare Llama 3.3", provider: "cfsherlock", icon: "☁️" },
-      { id: "MiniMaxAI/MiniMax-M2.5", name: "CloudFerro Sherlock MiniMax M2.5", provider: "cfsherlock", icon: "🇵🇱" },
-      { id: "meta-llama/Llama-3.3-70B-Instruct", name: "CloudFerro Sherlock Llama 3.3 70B", provider: "cfsherlock", icon: "🇵🇱" },
-      // Added 2026-08-01: same upstream model id Groq's own catalog entry
-      // above already uses ("openai/gpt-oss-120b") — that is expected and
-      // fine, they are DIFFERENT (id, provider) pairs pointing at different
-      // accounts/endpoints. See Header.tsx/ModelQuickSwitch.tsx/Sidebar.tsx
-      // for the (id, provider) matching fix this relies on — id-only
-      // matching would have silently mixed these two up. Live-verified via
-      // a direct call to https://api-sherlock.cloudferro.com/openai/v1
-      // (GET /models lists it, and a tool_choice:"auto" request against it
-      // produced a real tool_calls response) before being added here.
-      { id: "openai/gpt-oss-120b", name: "CloudFerro Sherlock GPT-OSS 120B", provider: "cfsherlock", icon: "🇵🇱" }
+      { id: "anthropic/claude-opus-5-max", name: "Claude Opus 5 Max", provider: "cfsherlock", icon: "🇵🇱" },
+      { id: "moonshot/kimi-k3-max", name: "Kimi K3 Max", provider: "cfsherlock", icon: "🇵🇱" },
+      { id: "openai/gpt-5.6-sol-xhigh", name: "GPT-5.6 Sol XHigh (Codex-Harness)", provider: "cfsherlock", icon: "🇵🇱" }
     ];
 
     const models = catalog.map(m => ({
