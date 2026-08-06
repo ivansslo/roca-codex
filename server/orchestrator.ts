@@ -151,6 +151,12 @@ CRITICAL — COMPLETE IN ONE SINGLE TURN (ZERO "LANJUT" OR TRUNCATION):
 - Never stop midway, never ask the user to type "lanjut", "continue", or "hasil" to get the rest of the answer.
 - Provide the complete, fully formed response and final result immediately.
 
+SNOWFLAKE CORTEX AGENT & NEON POSTGRES DATABASE DIRECTIVE (MINIMAX M2.5 FOCUS):
+- For ANY analytics, operational metrics, or tool execution history questions, immediately invoke 'query_snowflake_insight'.
+- For ANY application database queries, structured table reads, or SQL operations, immediately invoke 'query_neon_db'.
+- Remember that destructive SQL statements in Neon (DROP/ALTER/DELETE/UPDATE/CREATE/INSERT) require confirm:true.
+- Synthesize findings from Snowflake and Neon DB clearly, accurately, and without inventing any rows or numbers.
+
 STRICT FILE & ARCHIVE ANALYSIS DIRECTIVE (ZERO HELPLESSNESS):
 - NEVER ask the user what is inside a file, zip archive, or repository! You have full bash and file reading tool capabilities.
 - When a user asks you to analyze, inspect, or integrate a file, archive, zip, or uploaded attachment, IMMEDIATELY call tools (exec with 'unzip -l', 'file', 'cat', read_project_file, list_project_files) to inspect and extract the contents yourself!
@@ -1127,7 +1133,7 @@ async function callCloudFerro(messages: any[], modelName: string, executionLogs:
   const cfKey = process.env.CF_SHERLOCK_KEY || process.env.CLOUDFERRO_SHERLOCK_API_KEY || process.env.CLOUDFERRO_KEY;
   if (!cfKey) throw new Error("CF_SHERLOCK_KEY environment variable missing");
 
-  const model = modelName || "anthropic/claude-opus-5-max";
+  const model = modelName || "MiniMaxAI/MiniMax-M2.5";
   const cfModelMap: Record<string, string> = {
     "anthropic/claude-opus-5-max": "mistralai/Mistral-Small-4-119B-2603",
     "moonshot/kimi-k3-max": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
@@ -1554,7 +1560,7 @@ export async function runOrchestrator
   // OpenAI menolaknya. Akibatnya PROVIDER=openai tanpa memilih model di UI
   // selalu gagal pada percobaan pertama.
   const DEFAULT_MODEL: Record<string, string> = {
-    cfsherlock: "anthropic/claude-opus-5-max",
+    cfsherlock: "MiniMaxAI/MiniMax-M2.5",
     gitlabduo: "gitlab-duo-chat",
     requesty: "azure/gpt-5.4-mini@eastus2",
   };
@@ -1591,10 +1597,10 @@ export async function runOrchestrator
   // Urutan dari PROVIDER dulu, baru sisanya sebagai jaring pengaman.
   const providersToTry = [
     { name: norm(provider), model: model },
+    { name: "cfsherlock", model: "MiniMaxAI/MiniMax-M2.5" },
     { name: "cfsherlock", model: "anthropic/claude-opus-5-max" },
     { name: "cfsherlock", model: "moonshot/kimi-k3-max" },
     { name: "cfsherlock", model: "openai/gpt-5.6-sol-xhigh" },
-    { name: "cfsherlock", model: "MiniMaxAI/MiniMax-M2.5" },
     ...providerList.slice(1).map(n => ({ name: norm(n), model: DEFAULT_MODEL[norm(n)] || "" }))
       .filter(p => p.model),
     { name: "gemini", model: "gemini-2.5-flash" },
