@@ -84,6 +84,9 @@ async function main() {
       const hasGpt56SolCfSherlock = entries.some(e => e.id === 'openai/gpt-5.6-sol-xhigh' && e.provider === 'cfsherlock');
       ok(hasGpt56SolCfSherlock, "entri 'openai/gpt-5.6-sol-xhigh' milik provider cfsherlock ada");
 
+      const hasGitLabDuoEntry = entries.some(e => e.id === 'gitlab-duo-chat' && e.provider === 'gitlabduo');
+      ok(hasGitLabDuoEntry, "entri 'gitlab-duo-chat' milik provider gitlabduo ada");
+
       const cfsherlockEntries = entries.filter(e => e.provider === 'cfsherlock');
       ok(cfsherlockEntries.length >= 10, `cfsherlock memiliki entri model aktif di catalog (${cfsherlockEntries.length} ditemukan)`);
     }

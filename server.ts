@@ -105,9 +105,11 @@ if (HOST !== "127.0.0.1" && HOST !== "localhost" && HOST !== "::1") {
     // pun terlihat sah tetapi gagal tanpa penjelasan.
     const have = {
       cfsherlock: !!(process.env.CF_SHERLOCK_KEY || process.env.CLOUDFERRO_SHERLOCK_API_KEY || process.env.CLOUDFERRO_KEY),
+      gitlabduo: !!(process.env.GITLAB_DUO_KEY || process.env.GITLAB_TOKEN || process.env.GITLAB_PAT),
     } as Record<string, boolean>;
 
     const catalog = [
+      { id: "gitlab-duo-chat", name: "GitLab Duo (Claude 3.5 Sonnet)", provider: "gitlabduo", icon: "🦊" },
       { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Fast)", provider: "cfsherlock", icon: "⚡" },
       { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Reasoning)", provider: "cfsherlock", icon: "🧠" },
       { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "cfsherlock", icon: "⚡" },
