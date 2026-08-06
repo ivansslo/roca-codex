@@ -1,8 +1,7 @@
 import React, { useRef, useState } from 'react';
-import { Paperclip, Send, X, FileText, AlertCircle, Folder, Square, Target } from 'lucide-react';
+import { Send, X, FileText, AlertCircle, Folder, Square, Target } from 'lucide-react';
 import { FilePayload } from '../types';
 import { PersonaSelector } from './PersonaSelector';
-import { ModelQuickSwitch } from './ModelQuickSwitch';
 
 interface ChatInputProps {
   onSend: (text: string, file?: FilePayload) => void;
@@ -181,22 +180,11 @@ export function ChatInput({ onSend, disabled, retryOnError, onRetryOnErrorChange
         />
 
         <div className="flex items-center justify-between pt-1 border-t border-theme-border/60">
-          {/* Left: persona selector + model switch + attachment */}
+          {/* Left: persona selector */}
           <div className="flex items-center gap-2">
             {onPersonaChange && (
               <PersonaSelector value={persona} onChange={onPersonaChange} />
             )}
-            {onSelectModel && availableModels.length > 0 && (
-              <ModelQuickSwitch availableModels={availableModels} selectedModel={selectedModel} selectedProvider={selectedProvider} onSelectModel={onSelectModel} />
-            )}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="p-2 border border-theme-border bg-theme-btn-hover text-theme-text-secondary hover:text-theme-text-primary rounded-xl transition-all cursor-pointer shadow-xs"
-              title="Attach file context"
-            >
-              <Paperclip size={18} />
-            </button>
           </div>
           <input type="file" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
 
@@ -206,7 +194,7 @@ export function ChatInput({ onSend, disabled, retryOnError, onRetryOnErrorChange
               type="button"
               onClick={() => fileInputRef.current?.click()}
               className="p-2 border border-theme-border bg-theme-btn-hover text-theme-text-secondary hover:text-theme-text-primary rounded-xl transition-all cursor-pointer shadow-xs"
-              title="Browse workspace files"
+              title="Upload / Attach file"
             >
               <Folder size={18} />
             </button>
