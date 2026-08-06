@@ -424,12 +424,16 @@ async function callGroq(messages: any[], modelName: string, executionLogs: any[]
       messages: reqMessages,
       tools,
       tool_choice: "auto",
-      max_tokens: 8192,
-      max_completion_tokens: 8192,
+      max_tokens: 4096,
+      max_completion_tokens: 4096,
       temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
     })
   });
 
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`HTTP ${resp.status}: ${errText.slice(0, 150) || "Permintaan ditolak"}`);
+  }
   let data = await resp.json();
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
@@ -545,6 +549,10 @@ async function callOpenAI(messages: any[], modelName: string, executionLogs: any
       })
     });
 
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      throw new Error(`HTTP ${resp.status}: ${errText.slice(0, 150) || "Permintaan ditolak"}`);
+    }
     let data = await resp.json();
     if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
@@ -682,6 +690,10 @@ async function callOpenRouter(messages: any[], modelName: string, executionLogs:
     })
   });
 
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`HTTP ${resp.status}: ${errText.slice(0, 150) || "Permintaan ditolak"}`);
+  }
   let data = await resp.json();
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
@@ -1140,6 +1152,10 @@ async function callCloudFerro(messages: any[], modelName: string, executionLogs:
     })
   });
 
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`HTTP ${resp.status}: ${errText.slice(0, 150) || "Permintaan ditolak"}`);
+  }
   let data = await resp.json();
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
