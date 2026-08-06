@@ -45,7 +45,10 @@ export default function App() {
 
   // ---- Models / persona ----
   const [availableModels, setAvailableModels] = useState<any[]>([]);
-  const [selectedModel, setSelectedModel] = useState<string>(() => localStorage.getItem('ROC_MODEL') || 'gemini-2.5-flash');
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    const saved = localStorage.getItem('ROC_MODEL') || 'gemini-2.5-flash';
+    return saved.includes('1.5') ? 'gemini-2.5-flash' : saved;
+  });
   const [selectedProvider, setSelectedProvider] = useState<string>(() => localStorage.getItem('ROC_PROVIDER') || 'gemini');
   const [persona, setPersona] = useState<string>(() => localStorage.getItem('ROC_PERSONA') || DEFAULT_PERSONA);
   const abortRef = useRef<AbortController | null>(null);

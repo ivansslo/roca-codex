@@ -373,6 +373,28 @@ function getGeminiTools(): FunctionDeclaration[] {
   return cachedGeminiTools;
 }
 
+function formatModelLabel(id: string): string {
+  if (!id) return "AI Model";
+  const known: Record<string, string> = {
+    "anthropic/claude-opus-5-max": "Claude Opus 5 Max",
+    "moonshot/kimi-k3-max": "Kimi K3 Max",
+    "openai/gpt-5.6-sol-xhigh": "GPT-5.6 Sol XHigh",
+    "gemini-2.5-flash": "Gemini 2.5 Flash",
+    "gemini-2.5-pro": "Gemini 2.5 Pro",
+    "gemini-2.0-flash": "Gemini 2.0 Flash",
+    "gemini-2.0-flash-lite": "Gemini 2.0 Flash Lite",
+    "gpt-4o": "GPT-4o",
+    "gpt-4o-mini": "GPT-4o mini",
+    "deepseek/deepseek-r1": "DeepSeek R1",
+    "@cf/meta/llama-3.3-70b-instruct-fp8-fast": "Llama 3.3 70B",
+    "MiniMaxAI/MiniMax-M2.5": "MiniMax M2.5",
+    "meta-llama/Llama-3.3-70B-Instruct": "Llama 3.3 70B",
+    "openai/gpt-oss-120b": "GPT-OSS 120B",
+  };
+  if (known[id]) return known[id];
+  return id.split("/").pop() || id;
+}
+
 // 1. Groq Completion Provider
 async function callGroq(messages: any[], modelName: string, executionLogs: any[], onProgress?: Function, activeFile?: string) {
   const groqKey = process.env.GROQ_KEY || process.env.GROQ_API_KEY;
@@ -389,7 +411,7 @@ async function callGroq(messages: any[], modelName: string, executionLogs: any[]
     ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
   ];
 
-  onProgress?.({ type: 'status', data: { message: `Connecting to Groq (${effectiveModel})...` } });
+  onProgress?.({ type: 'status', data: { message: formatModelLabel(effectiveModel) } });
 
   let resp = await robustFetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
@@ -503,7 +525,7 @@ async function callOpenAI(messages: any[], modelName: string, executionLogs: any
     ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
   ];
 
-  onProgress?.({ type: 'status', data: { message: `Connecting to OpenAI (${modelName})...` } });
+  onProgress?.({ type: 'status', data: { message: formatModelLabel(modelName) } });
 
   try {
     let resp = await robustFetch("https://api.openai.com/v1/chat/completions", {
@@ -639,7 +661,7 @@ async function callOpenRouter(messages: any[], modelName: string, executionLogs:
     ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
   ];
 
-  onProgress?.({ type: 'status', data: { message: `Connecting to OpenRouter (${modelName})...` } });
+  onProgress?.({ type: 'status', data: { message: formatModelLabel(modelName) } });
 
   let resp = await robustFetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -778,13 +800,14 @@ async function callGemini(messages: any[], modelName: string, executionLogs: any
     return { text: "Hello Owner Ivan Ssl! I am ready to assist you.", logs: [] };
   }
 
+  const cleanModelName = (modelName && !modelName.includes("1.5")) ? modelName : "gemini-2.5-flash";
   const candidateModels = Array.from(new Set([
-    modelName,
+    cleanModelName,
     "gemini-2.5-flash",
     "gemini-2.0-flash",
     "gemini-2.5-pro",
     "gemini-2.0-flash-lite"
-  ].filter(Boolean)));
+  ].filter(Boolean))).filter(m => !m.includes("1.5"));
 
   let lastErr: any = null;
 
@@ -792,7 +815,7 @@ async function callGemini(messages: any[], modelName: string, executionLogs: any
 
   for (const mName of candidateModels) {
     try {
-      onProgress?.({ type: 'status', data: { message: `Connecting to Gemini (${mName})${useStream ? ' [stream]' : ''}...` } });
+      onProgress?.({ type: 'status', data: { message: formatModelLabel(mName) } });
       const seenToolCalls = new Map<string, any>(); // dedupe identical tool+args calls within this model attempt (see executeToolDeduped)
       const duplicateCallStrikes = { count: 0 }; // circuit breaker: force-stop after DUPLICATE_CALL_STRIKE_LIMIT repeats
 
@@ -897,7 +920,7 @@ async function callCloudflare(messages: any[], modelName: string, executionLogs:
     ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
   ];
 
-  onProgress?.({ type: 'status', data: { message: `Connecting to Cloudflare Workers AI (${model})...` } });
+  onProgress?.({ type: 'status', data: { message: formatModelLabel(model) } });
 
   const resp = await robustFetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
     method: "POST",
@@ -926,7 +949,7 @@ async function callOciModel(messages: any[], modelName: string, executionLogs: a
     ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
   ];
 
-  onProgress?.({ type: 'status', data: { message: `Connecting to OCI / Ollama Local Model (${model} @ ${endpoint})...` } });
+  onProgress?.({ type: 'status', data: { message: formatModelLabel(model) } });
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4000);
@@ -970,7 +993,7 @@ async function callRoadQwen(messages: any[], modelName: string, executionLogs: a
     ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
   ];
 
-  onProgress?.({ type: 'status', data: { message: `Connecting to RoadQwen Cloud (${model})...` } });
+  onProgress?.({ type: 'status', data: { message: formatModelLabel(model) } });
 
   const endpoints = [
     "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
@@ -1098,7 +1121,7 @@ async function callCloudFerro(messages: any[], modelName: string, executionLogs:
     ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text || "" }))
   ];
 
-  onProgress?.({ type: 'status', data: { message: `Connecting to CloudFerro Sherlock (${model})...` } });
+  onProgress?.({ type: 'status', data: { message: formatModelLabel(model) } });
 
   let resp = await robustFetch(`${baseUrl}/chat/completions`, {
     method: "POST",
