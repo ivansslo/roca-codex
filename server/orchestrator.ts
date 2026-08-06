@@ -47,7 +47,7 @@ export type OrchestratorOptions = {
 
 // How many tool-calling rounds an agent may take to complete a goal. Previously 5 — too low
 // for multi-step goals (read → edit → run → fix → re-run), so the agent stopped mid-task.
-const MAX_TOOL_TURNS = 12;
+const MAX_TOOL_TURNS = 30;
 
 // Distinguish "the provider genuinely returned nothing" from "the tool-turn budget
 // (MAX_TOOL_TURNS) ran out while the model was still trying to call more tools".
@@ -145,6 +145,11 @@ function duplicateToolLoopMessage(executionLogs: any[]): string {
 
 // Goal-executing agent prompt: the agent must ACCOMPLISH the user's intent AND never fabricate results.
 const OWNER_SYSTEM_PROMPT_BASE = `You are RocAgent, an autonomous goal-executing engineering agent in a LIVE workspace with REAL tool access (read/write/edit files, search, run shell, zip inspection, memory, http).
+
+CRITICAL — COMPLETE IN ONE SINGLE TURN (ZERO "LANJUT" OR TRUNCATION):
+- ALWAYS complete your entire explanation, code block, analysis, or workflow in ONE SINGLE RUN.
+- Never stop midway, never ask the user to type "lanjut", "continue", or "hasil" to get the rest of the answer.
+- Provide the complete, fully formed response and final result immediately.
 
 STRICT FILE & ARCHIVE ANALYSIS DIRECTIVE (ZERO HELPLESSNESS):
 - NEVER ask the user what is inside a file, zip archive, or repository! You have full bash and file reading tool capabilities.
@@ -397,6 +402,8 @@ async function callGroq(messages: any[], modelName: string, executionLogs: any[]
       messages: reqMessages,
       tools,
       tool_choice: "auto",
+      max_tokens: 8192,
+      max_completion_tokens: 8192,
       temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
     })
   });
@@ -510,6 +517,8 @@ async function callOpenAI(messages: any[], modelName: string, executionLogs: any
         messages: reqMessages,
         tools,
         tool_choice: "auto",
+        max_tokens: 8192,
+        max_completion_tokens: 8192,
         temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
       })
     });
@@ -645,6 +654,8 @@ async function callOpenRouter(messages: any[], modelName: string, executionLogs:
       messages: reqMessages,
       tools,
       tool_choice: "auto",
+      max_tokens: 8192,
+      max_completion_tokens: 8192,
       temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
     })
   });
@@ -790,7 +801,8 @@ async function callGemini(messages: any[], modelName: string, executionLogs: any
         tools: [{ functionDeclarations }],
         temperature: ACTIVE_GEN_CONFIG.temperature,
         topP: ACTIVE_GEN_CONFIG.topP,
-        topK: ACTIVE_GEN_CONFIG.topK
+        topK: ACTIVE_GEN_CONFIG.topK,
+        maxOutputTokens: 8192
       };
 
       // Run a single generation. Streams text deltas live via onProgress; returns the turn's text + any tool calls.
@@ -893,7 +905,7 @@ async function callCloudflare(messages: any[], modelName: string, executionLogs:
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ messages: reqMessages, temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP })
+    body: JSON.stringify({ messages: reqMessages, max_tokens: 8192, temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP })
   });
 
   const data = await resp.json();
@@ -928,7 +940,7 @@ async function callOciModel(messages: any[], modelName: string, executionLogs: a
         model,
         prompt: reqMessages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\n\n"),
         stream: false,
-        options: { temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP }
+        options: { temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP, num_predict: 8192 }
       })
     });
     clearTimeout(timer);
@@ -979,6 +991,8 @@ async function callRoadQwen(messages: any[], modelName: string, executionLogs: a
           messages: reqMessages,
           tools,
           tool_choice: "auto",
+          max_tokens: 8192,
+          max_completion_tokens: 8192,
           temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
         })
       });
@@ -1097,6 +1111,8 @@ async function callCloudFerro(messages: any[], modelName: string, executionLogs:
       messages: reqMessages,
       tools,
       tool_choice: "auto",
+      max_tokens: 8192,
+      max_completion_tokens: 8192,
       temperature: ACTIVE_GEN_CONFIG.temperature, top_p: ACTIVE_GEN_CONFIG.topP
     })
   });
