@@ -1193,6 +1193,16 @@ export const toolImplementations: Record<string, Function> = {
       const question = (args.question || "").trim();
       if (!question) return { status: "error", message: "question is required" };
 
+      if (question.length > 1000) {
+        return { status: "error", message: "Blocked by Snowflake guard: Pertanyaan terlalu panjang (maksimal 1000 karakter) untuk pencegahan penyalahgunaan kuota." };
+      }
+
+      // Safeguard against SQL injection / administrative prompt overrides in Snowflake Cortex
+      const SF_ADMIN_BLOCK_RE = /\b(DROP\s+DATABASE|ALTER\s+ACCOUNT|GRANT\s+ROLE\s+ACCOUNTADMIN|IGNORE\s+PREVIOUS\s+INSTRUCTIONS)\b/i;
+      if (SF_ADMIN_BLOCK_RE.test(question)) {
+        return { status: "error", message: "Blocked by Snowflake guard: Pertanyaan mengandung pola instruksi administratif atau injeksi SQL/prompt yang dilarang." };
+      }
+
       const account = process.env.SNOWFLAKE_ACCOUNT || "";
       const user = process.env.SNOWFLAKE_USER || "";
       const pat = process.env.SNOWFLAKE_PAT || process.env.SNOWFLAKE_KEY || "";
@@ -1206,6 +1216,11 @@ export const toolImplementations: Record<string, Function> = {
       const database = args.database || process.env.SNOWFLAKE_INSIGHT_DB || "ROCAGENTINSIGHT_DB";
       const schema = args.schema || process.env.SNOWFLAKE_INSIGHT_SCHEMA || "GOVERNANCE";
       const agentName = args.agent || process.env.SNOWFLAKE_INSIGHT_AGENT || "ROCAGENTINSIGHT";
+
+      const ID_RE = /^[A-Za-z0-9_-]+$/;
+      if (!ID_RE.test(database) || !ID_RE.test(schema) || !ID_RE.test(agentName)) {
+        return { status: "error", message: "Blocked by Snowflake guard: Nama database, schema, atau agent harus berupa identifier valid (A-Z, 0-9, _, -) untuk mencegah URL path traversal." };
+      }
 
       const host = `https://${account}.snowflakecomputing.com`;
       const url = `${host}/api/v2/databases/${database}/schemas/${schema}/agents/${agentName}:run`;
@@ -1573,10 +1588,18 @@ export const toolImplementations: Record<string, Function> = {
   //    model, so a `SELECT *` against a huge table doesn't blow the context window.
   query_neon_db: async (args: { sql: string; confirm?: boolean }) => {
     const NEON_DESTRUCTIVE_RE = /^\s*(?:--[^\n]*\n\s*)*(DROP|TRUNCATE|ALTER|DELETE|UPDATE|CREATE|GRANT|REVOKE|INSERT)\b/i;
+    const NEON_ADMIN_BLOCK_RE = /\b(ALTER\s+SYSTEM|COPY\s+.*(?:\bPROGRAM\b|\bTO\b|\bFROM\b)|CREATE\s+EXTENSION|LOAD|pg_shadow|pg_authid|pg_user)\b/i;
 
     try {
       const sql = (args.sql || "").trim();
       if (!sql) return { status: "error", message: "sql is required" };
+
+      if (NEON_ADMIN_BLOCK_RE.test(sql)) {
+        return {
+          status: "error",
+          message: "Blocked by database guard: administrative/system statements and credential-table queries (ALTER SYSTEM, COPY PROGRAM, pg_shadow, dll.) dilarang demi keamanan."
+        };
+      }
 
       // Confirmation gate BEFORE the config check, deliberately: whether a
       // destructive statement needs confirm:true is a property of the SQL

@@ -87,6 +87,18 @@ async function main() {
     ok(r.status === 'error' && !r.requiresConfirmation && /NEON_URI/.test(r.message), "confirm:true melewati gate destruktif, gagal di config (bukan ditolak confirm lagi)");
   }
 
+  console.log('\n-- query_neon_db: administrative/system override queries are blocked EVEN with confirm:true --');
+  const adminCases = [
+    'ALTER SYSTEM SET work_mem = "4MB";',
+    'COPY (SELECT * FROM users) TO PROGRAM "rm -rf /";',
+    'SELECT * FROM pg_shadow;',
+    'CREATE EXTENSION pgcrypto;',
+  ];
+  for (const sql of adminCases) {
+    const r: any = await toolImplementations.query_neon_db({ sql, confirm: true });
+    ok(r.status === 'error' && !r.requiresConfirmation && /Blocked by database guard/i.test(r.message), `"${sql.split(' ')[0]} ..." -> diblokir mutlak oleh database guard (bukan cek NEON_URI)`);
+  }
+
   if (savedNeonUri !== undefined) process.env.NEON_URI = savedNeonUri;
 
   console.log(`\n${pass} lulus, ${fail} gagal\n`);
